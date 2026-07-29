@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(future_incompatible)]
 
 mod app;
 mod editor;
@@ -7,6 +9,8 @@ mod languages;
 mod ai;
 mod low_level;
 mod ui;
+mod build;
+mod utils;
 
 use app::PhobosApp;
 use eframe::egui;

@@ -43,6 +43,7 @@ iced-x86 = "1"
 
 # Process
 which = "6"
+chrono = "0.4.45"
 
 [profile.release]
 opt-level = 3
