@@ -1,0 +1,1 @@
+// pascal language support stub

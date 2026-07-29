@@ -1,0 +1,1 @@
+// syntax module stub

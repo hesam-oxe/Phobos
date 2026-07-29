@@ -1,0 +1,1 @@
+// php language support stub

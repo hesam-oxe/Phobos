@@ -1,0 +1,1 @@
+// go language support stub
