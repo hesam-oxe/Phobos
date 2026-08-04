@@ -65,7 +65,7 @@ impl PythonLang {
         let mut result = String::new();
         let mut in_string = false;
         let mut in_triple_string = false;
-        let mut in_comment = false;
+        let in_comment = false;
         let mut current_word = String::new();
         let chars: Vec<char> = line.chars().collect();
         let mut i = 0;

@@ -182,7 +182,7 @@ impl GhostTyper {
             if before_cursor.ends_with(&format!("{}.", last_word)) {
                 // Method completion
                 suggestions.push(Suggestion {
-                    text: format!("method($0)".to_string()),
+                    text: "method($0)".to_string(),
                     kind: SuggestionKind::Method,
                     confidence: 0.6,
                     description: format!("Method of {}", last_word),
