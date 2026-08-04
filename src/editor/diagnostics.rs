@@ -87,7 +87,7 @@ impl DiagnosticsPanel {
         // Filter options
         ui.horizontal(|ui| {
             ui.label("Filter:");
-            egui::ComboBox::from_id_salt("severity_filter")
+            egui::ComboBox::from_id_source("severity_filter")
                 .selected_text(format!("{:?}", self.filter_severity))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.filter_severity, DiagnosticSeverity::Error, "Errors");

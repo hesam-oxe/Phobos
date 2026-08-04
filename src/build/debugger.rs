@@ -47,6 +47,7 @@ pub struct Debugger {
     stack_frames: Vec<StackFrame>,
     variables: Vec<Variable>,
     output_buffer: String,
+    child: Option<Child>,
 }
 
 impl Debugger {
@@ -132,8 +133,6 @@ impl Debugger {
 
         Ok(())
     }
-
-    child: Option<Child>,
 
     pub fn continue_execution(&mut self) -> Result<String> {
         self.send_command("continue")

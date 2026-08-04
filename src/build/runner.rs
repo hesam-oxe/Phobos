@@ -37,7 +37,7 @@ impl Runner {
             anyhow::bail!("No runner configured for language: {}", self.language);
         }
 
-        let mut cmd = Command::new(interpreter);
+        let mut cmd = Command::new(&interpreter);
         
         if !args.is_empty() {
             cmd.args(&args);
@@ -87,7 +87,7 @@ impl Runner {
             anyhow::bail!("No runner configured for language: {}", self.language);
         }
 
-        let mut cmd = Command::new(interpreter);
+        let mut cmd = Command::new(&interpreter);
         
         if !args.is_empty() {
             cmd.args(&args);

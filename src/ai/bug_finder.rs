@@ -14,7 +14,7 @@ pub struct BugReport {
     pub code_snippet: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Severity {
     Critical,
     High,
@@ -23,7 +23,7 @@ pub enum Severity {
     Info,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BugCategory {
     Syntax,
     Logic,
@@ -62,7 +62,7 @@ impl Rule for UnusedVariableRule {
         // Simplified check - in real implementation would track variable usage
         if let Some(caps) = self.pattern.captures(code) {
             let var_name = &caps[1];
-            if !var_name.starts_with('_') && !code.contains(&format!("println!", var_name)) {
+            if !var_name.starts_with('_') && !code.contains(&format!("println!({})", var_name)) {
                 return Some(BugReport {
                     line_number,
                     severity: Severity::Low,
