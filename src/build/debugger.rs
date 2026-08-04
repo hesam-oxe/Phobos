@@ -62,7 +62,7 @@ impl Debugger {
             _ => "gdb".to_string(),
         };
 
-        Self {
+        Self { child: None,
             language: language.to_string(),
             debugger_cmd,
             breakpoints: Vec::new(),
