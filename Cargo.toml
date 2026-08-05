@@ -1,6 +1,6 @@
 [package]
 name = "phobos"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "💀 Phobos IDE — The God of Fear. Polyglot. Native. Unstoppable."
 license = "AGPL-3.0"
@@ -9,44 +9,9 @@ license = "AGPL-3.0"
 # GUI Framework
 egui = "0.28"
 eframe = "0.28"
+egui_extras = { version = "0.28", features = ["all_loaders"] }
 
-# Syntax Highlighting
-syntect = { version = "5", default-features = false, features = ["default-fancy"] }
-
-# File System
-rfd = "0.14"
-walkdir = "2"
-
-# Terminal
-portable-pty = "0.8"
-
-# Async Runtime
-tokio = { version = "1", features = ["full"] }
-
-# Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-# Git
-git2 = "0.18"
-
-# Logging
-log = "0.4"
-env_logger = "0.11"
-
-# Error Handling
-anyhow = "1"
-
-# Hex / Low-Level
-hex = "0.4"
-iced-x86 = "1"
-
-# Process
-which = "6"
-chrono = "0.4.45"
-
-# AI & Text Processing
-regex = "1"
+# Syntax Highlighting (Tree-sitter)
 tree-sitter = "0.20"
 tree-sitter-rust = "0.20"
 tree-sitter-python = "0.20"
@@ -58,6 +23,56 @@ tree-sitter-go = "0.20"
 tree-sitter-ruby = "0.20"
 tree-sitter-php = "0.20"
 tree-sitter-c-sharp = "0.20"
+tree-sitter-bash = "0.20"
+tree-sitter-json = "0.20"
+tree-sitter-yaml = "0.5"
+tree-sitter-html = "0.20"
+tree-sitter-css = "0.20"
+
+# Async Runtime
+tokio = { version = "1", features = ["full"] }
+
+# Message Passing
+crossbeam-channel = "0.5"
+
+# LSP Support
+lsp-types = "0.95"
+
+# File System Watching
+notify = "6"
+
+# Terminal
+portable-pty = "0.8"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error Handling
+anyhow = "1"
+thiserror = "1"
+
+# File System
+rfd = "0.14"
+walkdir = "2"
+
+# ANSI Escape Code Parsing
+ansi_term = "0.12"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Process Management
+which = "6"
+chrono = "0.4"
+
+# Git (optional for v0.2)
+git2 = "0.18"
+
+# Hex / Low-Level
+hex = "0.4"
+iced-x86 = "1"
 
 [profile.release]
 opt-level = 3
