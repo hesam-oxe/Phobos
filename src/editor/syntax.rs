@@ -1,19 +1,85 @@
-use syntect::highlighting::ThemeSet;
-use syntect::parsing::SyntaxSet;
+//! Phobos IDE - Syntax Highlighting Module
+//! Tree-sitter based syntax highlighting with theme support
 
+use egui::Color32;
+
+/// Color theme for syntax highlighting
+#[derive(Debug, Clone)]
+pub struct HighlightTheme {
+    pub name: String,
+    pub keyword: Color32,
+    pub function: Color32,
+    pub string: Color32,
+    pub comment: Color32,
+    pub number: Color32,
+    pub type_name: Color32,
+    pub variable: Color32,
+    pub operator: Color32,
+    pub punctuation: Color32,
+}
+
+impl HighlightTheme {
+    /// Dark theme (default)
+    pub fn dark() -> Self {
+        Self {
+            name: "Dark".to_string(),
+            keyword: Color32::from_rgb(86, 156, 214),
+            function: Color32::from_rgb(220, 220, 170),
+            string: Color32::from_rgb(206, 145, 120),
+            comment: Color32::GRAY,
+            number: Color32::from_rgb(181, 206, 168),
+            type_name: Color32::from_rgb(78, 201, 176),
+            variable: Color32::WHITE,
+            operator: Color32::from_rgb(212, 212, 212),
+            punctuation: Color32::from_rgb(212, 212, 212),
+        }
+    }
+    
+    /// Light theme
+    pub fn light() -> Self {
+        Self {
+            name: "Light".to_string(),
+            keyword: Color32::from_rgb(0, 0, 193),
+            function: Color32::from_rgb(100, 100, 50),
+            string: Color32::from_rgb(193, 100, 50),
+            comment: Color32::from_rgb(128, 128, 128),
+            number: Color32::from_rgb(0, 128, 0),
+            type_name: Color32::from_rgb(0, 128, 128),
+            variable: Color32::BLACK,
+            operator: Color32::from_rgb(50, 50, 50),
+            punctuation: Color32::from_rgb(50, 50, 50),
+        }
+    }
+    
+    /// Monokai theme
+    pub fn monokai() -> Self {
+        Self {
+            name: "Monokai".to_string(),
+            keyword: Color32::from_rgb(249, 38, 114),
+            function: Color32::from_rgb(166, 226, 46),
+            string: Color32::from_rgb(230, 219, 116),
+            comment: Color32::from_rgb(117, 113, 94),
+            number: Color32::from_rgb(174, 129, 255),
+            type_name: Color32::from_rgb(102, 217, 239),
+            variable: Color32::from_rgb(248, 248, 242),
+            operator: Color32::from_rgb(249, 38, 114),
+            punctuation: Color32::from_rgb(248, 248, 242),
+        }
+    }
+}
+
+/// Legacy SyntaxHighlighter for backward compatibility
 pub struct SyntaxHighlighter {
-    syntax_set: SyntaxSet,
-    theme_set: ThemeSet,
+    theme: HighlightTheme,
 }
 
 impl SyntaxHighlighter {
     pub fn new() -> Self {
         Self {
-            syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme_set: ThemeSet::load_defaults(),
+            theme: HighlightTheme::dark(),
         }
     }
-
+    
     pub fn get_extension(&self, lang: &str) -> &'static str {
         match lang.to_lowercase().as_str() {
             "asm" | "assembly" => "asm",
@@ -45,18 +111,6 @@ impl SyntaxHighlighter {
         }
     }
 
-    pub fn highlight_html(&self, code: &str, lang: &str) -> String {
-        let ext = self.get_extension(lang);
-        let syntax = self.syntax_set
-            .find_syntax_by_extension(ext)
-            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
-        
-        let theme = &self.theme_set.themes["base16-ocean.dark"];
-        
-        syntect::html::highlighted_html_for_string(code, &self.syntax_set, syntax, theme)
-            .unwrap_or_else(|_| code.to_string())
-    }
-
     pub fn language_list() -> Vec<(&'static str, &'static str)> {
         vec![
             ("🟣 Assembly", "asm"), ("🔵 C", "c"), ("🔵 C++", "cpp"),
@@ -71,5 +125,19 @@ impl SyntaxHighlighter {
             ("📝 YAML", "yaml"), ("📘 Markdown", "md"),
             ("🐳 Dockerfile", "dockerfile"), ("⚙️ TOML", "toml"),
         ]
+    }
+    
+    pub fn set_theme(&mut self, theme: HighlightTheme) {
+        self.theme = theme;
+    }
+    
+    pub fn theme(&self) -> &HighlightTheme {
+        &self.theme
+    }
+}
+
+impl Default for SyntaxHighlighter {
+    fn default() -> Self {
+        Self::new()
     }
 }
