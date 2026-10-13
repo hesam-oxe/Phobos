@@ -9,7 +9,7 @@
 - محیط: Ubuntu 26.04، رم 780GB، CPU قوی. Rust 1.99 در `$HOME/.cargo/bin/cargo` (`/config/.cargo/bin/cargo`).
 - زبان کاربر: فارسی جواب بده، کوتاه و فنی.
 
-## وضعیت (آخرین پوش: d96767e — تغییرات لوکال چک‌سبز، آماده پوش)
+## وضعیت (آخرین پوش: 417cb46 — چک‌سبز، پوش شد)
 `cargo check -j 4`: سبز (EXIT:0، فقط 2 وارنینگ deprecated root_path/root_uri).
 فیکس‌های لوکال (12 فایل، پوش نشده):
 - `services/terminal/shell.rs`: تک `openpty` صحیح (حذف double-pair)، `master` غیر-mut
