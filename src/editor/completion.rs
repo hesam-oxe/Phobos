@@ -30,6 +30,17 @@ impl CompletionProvider {
         self.selected_index = 0;
     }
 
+    /// Replace popup contents with external suggestions (e.g. from LSP).
+    pub fn set_suggestions(&mut self, suggestions: Vec<Suggestion>) {
+        self.suggestions = suggestions;
+        self.popup_visible = !self.suggestions.is_empty();
+        self.selected_index = 0;
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.popup_visible && !self.suggestions.is_empty()
+    }
+
     pub fn navigate_up(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;

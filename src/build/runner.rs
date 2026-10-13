@@ -3,8 +3,8 @@
 
 use std::process::{Command, Stdio, Child};
 use std::path::{Path, PathBuf};
-use std::io::{Read, Write, BufRead, BufReader};
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::io::{Write, BufRead, BufReader};
+use std::sync::mpsc::{channel, Receiver};
 use anyhow::{Result, Context};
 
 pub struct Runner {
@@ -124,50 +124,89 @@ impl Runner {
     }
 }
 
+/// A spawned child with line-streaming stdout/stderr.
+/// Reader threads push lines into channels; the UI drains them every frame.
 pub struct AsyncRunner {
-    child: Child,
-    stdout_sender: Sender<String>,
-    stderr_sender: Sender<String>,
-    is_running: bool,
+    child: Option<Child>,
+    out_rx: Receiver<String>,
+    err_rx: Receiver<String>,
 }
 
 impl AsyncRunner {
-    fn new(child: Child) -> Self {
-        let (stdout_sender, _) = channel::<String>();
-        let (stderr_sender, _) = channel::<String>();
-        
-        Self {
-            child,
-            stdout_sender,
-            stderr_sender,
-            is_running: true,
+    fn new(mut child: Child) -> Self {
+        let (out_tx, out_rx) = channel::<String>();
+        let (err_tx, err_rx) = channel::<String>();
+        if let Some(out) = child.stdout.take() {
+            std::thread::spawn(move || {
+                let r = BufReader::new(out);
+                for line in r.lines().flatten() {
+                    if out_tx.send(line).is_err() {
+                        break;
+                    }
+                }
+            });
         }
+        if let Some(err) = child.stderr.take() {
+            std::thread::spawn(move || {
+                let r = BufReader::new(err);
+                for line in r.lines().flatten() {
+                    if err_tx.send(line).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        Self { child: Some(child), out_rx, err_rx }
     }
 
     pub fn write_input(&mut self, input: &str) -> Result<()> {
-        if let Some(mut stdin) = self.child.stdin.take() {
-            stdin.write_all(input.as_bytes())?;
+        if let Some(child) = self.child.as_mut() {
+            if let Some(stdin) = child.stdin.as_mut() {
+                stdin.write_all(input.as_bytes())?;
+                stdin.flush()?;
+                return Ok(());
+            }
         }
-        Ok(())
+        anyhow::bail!("stdin not available")
     }
 
-    pub fn read_output(&mut self) -> Result<String> {
-        let mut output = String::new();
-        if let Some(stdout) = self.child.stdout.take() {
-            let mut reader = BufReader::new(stdout);
-            reader.read_line(&mut output)?;
+    /// Drain available lines without blocking: (stdout, stderr).
+    pub fn drain(&mut self) -> (Vec<String>, Vec<String>) {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        while let Ok(l) = self.out_rx.try_recv() {
+            out.push(l);
         }
-        Ok(output)
+        while let Ok(l) = self.err_rx.try_recv() {
+            err.push(l);
+        }
+        (out, err)
+    }
+
+    /// Non-blocking exit check. Returns Some(code) once the child exited.
+    pub fn try_exit(&mut self) -> Result<Option<i32>> {
+        if let Some(child) = self.child.as_mut() {
+            if let Some(status) = child.try_wait()? {
+                return Ok(Some(status.code().unwrap_or(-1)));
+            }
+            return Ok(None);
+        }
+        Ok(Some(-1))
     }
 
     pub fn stop(&mut self) -> Result<()> {
-        self.child.kill()?;
-        self.is_running = false;
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
         Ok(())
     }
 
-    pub fn is_running(&self) -> bool {
-        self.is_running
+    pub fn is_running(&mut self) -> bool {
+        match self.try_exit() {
+            Ok(None) => true,
+            _ => false,
+        }
     }
 }
 

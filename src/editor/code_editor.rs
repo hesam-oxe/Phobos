@@ -183,6 +183,20 @@ impl CodeEditor {
         self.diagnostics = diagnostics;
         self.update_gutter_markers();
     }
+
+    /// (errors, warnings) for the status bar.
+    pub fn diagnostic_counts(&self) -> (usize, usize) {
+        let mut errors = 0;
+        let mut warnings = 0;
+        for d in &self.diagnostics {
+            match d.severity {
+                crate::core::DiagnosticSeverity::Error => errors += 1,
+                crate::core::DiagnosticSeverity::Warning => warnings += 1,
+                _ => {}
+            }
+        }
+        (errors, warnings)
+    }
     
     /// Update gutter markers based on diagnostics
     fn update_gutter_markers(&mut self) {
@@ -542,6 +556,30 @@ impl CodeEditor {
         let line = prefix.lines().count();
         let col = prefix.lines().last().map(|l| l.len()).unwrap_or(0);
         (line, col)
+    }
+
+    /// Cursor as LSP position: 0-based line + UTF-16 character offset.
+    pub fn cursor_lsp_pos(&self) -> (u32, u32) {
+        let mut end = self.cursor_pos.min(self.content.len());
+        while end > 0 && !self.content.is_char_boundary(end) {
+            end -= 1;
+        }
+        let prefix = &self.content[..end];
+        let line = prefix.bytes().filter(|&b| b == b'\n').count() as u32;
+        let col = prefix.rsplit('\n').next().unwrap_or("").encode_utf16().count() as u32;
+        (line, col)
+    }
+
+    /// Jump cursor to the start of a 0-based line (used by minimap).
+    pub fn jump_to_line(&mut self, line: usize) {
+        let mut byte = 0usize;
+        for (i, l) in self.content.split_inclusive('\n').enumerate() {
+            if i >= line {
+                break;
+            }
+            byte += l.len();
+        }
+        self.cursor_pos = byte.min(self.content.len());
     }
     
     /// Insert text at cursor

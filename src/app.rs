@@ -1,9 +1,14 @@
 use eframe::egui;
 use egui::{Color32, Frame, Margin, Rounding, Stroke};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use crate::editor::code_editor::CodeEditor;
 use crate::editor::syntax::SyntaxHighlighter;
 use crate::editor::minimap::Minimap;
+use crate::editor::completion::CompletionProvider;
+use crate::core::{CompletionItem as CoreCompletionItem, CompletionItemKind as CoreKind};
+use crate::ai::ghost_typer::{Suggestion, SuggestionKind};
+use crate::services::lsp::{LspManager, LspEvent};
 use crate::ui::file_explorer::FileExplorer;
 use crate::ui::tabs::TabManager;
 use crate::ui::theme::Theme;
@@ -68,6 +73,11 @@ pub struct PhobosApp {
     last_save: std::time::Instant,
     watcher: Option<notify::RecommendedWatcher>,
     watch_rx: Option<std::sync::mpsc::Receiver<crate::services::watcher::WatchEvent>>,
+    lsp: LspManager,
+    completion: CompletionProvider,
+    lsp_hover: Option<String>,
+    pending_completion: u64,
+    pending_hover: u64,
 }
 
 impl PhobosApp {
@@ -120,6 +130,11 @@ impl PhobosApp {
             last_save: std::time::Instant::now(),
             watcher,
             watch_rx,
+            lsp: LspManager::new(),
+            completion: CompletionProvider::new("rust"),
+            lsp_hover: None,
+            pending_completion: 0,
+            pending_hover: 0,
         };
         app.editor.config.show_line_numbers = config.show_line_numbers;
         app.editor.config.minimap_enabled = config.show_minimap;
@@ -156,7 +171,10 @@ impl PhobosApp {
                 let lang = self.syntax_highlighter.get_extension(ext).to_string();
                 self.editor.set_language(&lang);
                 self.ai_panel.set_language(&lang);
+                self.completion.set_language(&lang);
             }
+            let root = self.workspace_root_for(&path);
+            self.lsp.open_file(&path, &self.editor.content, root);
             let name = std::path::Path::new(&path).file_name()
                 .map(|n| n.to_string_lossy().to_string()).unwrap_or(path.clone());
             self.tabs.open_tab(&name);
@@ -187,7 +205,10 @@ impl PhobosApp {
                 let lang = self.syntax_highlighter.get_extension(ext).to_string();
                 self.editor.set_language(&lang);
                 self.ai_panel.set_language(&lang);
+                self.completion.set_language(&lang);
             }
+            let root = self.workspace_root_for(&path_str);
+            self.lsp.open_file(&path_str, &self.editor.content, root);
             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or("Unknown".into());
             self.tabs.open_tab(&name);
             self.welcome_page.visible = false;
@@ -215,7 +236,8 @@ impl PhobosApp {
     fn save_file(&mut self) {
         if let Some(path) = self.current_file_path.clone() {
             if FileIO::write_file(&path, &self.editor.content) {
-                self.editors.insert(path, self.editor.content.clone());
+                self.editors.insert(path.clone(), self.editor.content.clone());
+                self.lsp.change(&path, &self.editor.content);
                 self.notification = Some(("💾 Saved".into(), 2.0));
                 self.last_save = std::time::Instant::now();
             }
@@ -296,6 +318,73 @@ impl PhobosApp {
         }
     }
 
+    fn poll_lsp(&mut self) {
+        for ev in self.lsp.poll() {
+            match ev {
+                LspEvent::Diagnostics { path, diagnostics } => {
+                    if self.current_file_path.as_deref() == Some(path.as_str()) {
+                        self.editor.set_diagnostics(diagnostics);
+                    }
+                }
+                LspEvent::Completions { id, items } => {
+                    if id == self.pending_completion {
+                        let suggestions =
+                            items.iter().map(lsp_to_suggestion).collect::<Vec<_>>();
+                        if !suggestions.is_empty() {
+                            self.completion.set_suggestions(suggestions);
+                        }
+                    }
+                }
+                LspEvent::Hover { id, text } => {
+                    if id == self.pending_hover && !text.trim().is_empty() {
+                        self.lsp_hover = Some(text);
+                    }
+                }
+                LspEvent::Status(msg) => {
+                    self.notification = Some((msg, 2.5));
+                }
+            }
+        }
+    }
+
+    fn workspace_root_for(&self, path: &str) -> PathBuf {
+        if !self.file_explorer.current_dir.is_empty() {
+            return PathBuf::from(&self.file_explorer.current_dir);
+        }
+        std::path::Path::new(path)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    fn request_lsp_completion(&mut self) {
+        let pos = self.editor.cursor_pos;
+        let code = self.editor.content.clone();
+        self.completion.update_suggestions(&code, pos);
+        if let Some(path) = self.current_file_path.clone() {
+            if LspManager::supports(&path) {
+                let (line, col) = self.editor.cursor_lsp_pos();
+                if let Some(id) = self.lsp.request_completion(&path, line, col) {
+                    self.pending_completion = id;
+                }
+            }
+        }
+    }
+
+    fn request_lsp_hover(&mut self) {
+        if let Some(path) = self.current_file_path.clone() {
+            if LspManager::supports(&path) {
+                let (line, col) = self.editor.cursor_lsp_pos();
+                if let Some(id) = self.lsp.request_hover(&path, line, col) {
+                    self.pending_hover = id;
+                }
+            } else {
+                self.notification =
+                    Some(("No language server for this file".into(), 2.0));
+            }
+        }
+    }
+
     fn exec_palette(&mut self, cmd: &str) {
         match cmd {
             c if c.starts_with("📂 File: Open") => self.open_file(),
@@ -313,6 +402,8 @@ impl PhobosApp {
             c if c.starts_with("🌿 Git") => self.show_git = !self.show_git,
             c if c.starts_with("🔧 Hex") => { self.show_hex = true; if let Some(p) = self.current_file_path.clone() { self.hex_editor.open_file(&p); } }
             c if c.starts_with("⚙️ Disasm") => { self.show_disasm = true; if let Some(p) = self.current_file_path.clone() { self.disassembler.disassemble_file(&p); } }
+            c if c.starts_with("✨ LSP") => self.request_lsp_completion(),
+            c if c.starts_with("🔍 LSP") => self.request_lsp_hover(),
             c if c.starts_with("🧘") => self.zen_mode.toggle(),
             c if c.starts_with("📊") => self.split_view = !self.split_view,
             _ => {}
@@ -423,6 +514,7 @@ impl PhobosApp {
                     ("📁 View: Toggle Explorer", "Ctrl+B"), ("💻 View: Toggle Terminal", "Ctrl+J"),
                     ("🧠 AI: Toggle Panel", "Ctrl+I"), ("🔨 Build: Build", "Ctrl+B"),
                     ("▶ Run: Run", "F5"), ("🐞 Debug: Panel", "Shift+F5"),
+                    ("✨ LSP: Complete", "Ctrl+Space"), ("🔍 LSP: Hover", "Ctrl+K"),
                     ("🌿 Git: Panel", ""), ("🔧 Hex: Open", ""), ("⚙️ Disasm: Open", ""),
                     ("🧘 View: Zen Mode", ""), ("📊 View: Split Editor", "Ctrl+\\"),
                 ];
@@ -444,6 +536,7 @@ impl eframe::App for PhobosApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.theme.apply(ctx);
         self.poll_watcher();
+        self.poll_lsp();
         self.render_menu_bar(ctx);
 
         if ctx.input(|i| i.key_pressed(egui::Key::O) && i.modifiers.ctrl) { self.open_file(); }
@@ -467,6 +560,28 @@ impl eframe::App for PhobosApp {
             self.current_file_path = None;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::I) && i.modifiers.ctrl) { self.show_ai_panel = !self.show_ai_panel; }
+        // LSP completion (Ctrl+Space): instant local AI + async server enrich
+        if ctx.input(|i| i.key_pressed(egui::Key::Space) && i.modifiers.ctrl) { self.request_lsp_completion(); }
+        // Accept selected completion with Tab (consume so editor doesn't indent)
+        if self.completion.is_visible() && ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
+            if let Some(text) = self.completion.accept_completion() {
+                self.editor.insert_text(&text);
+            }
+            ctx.input_mut(|i| { i.consume_key(egui::Modifiers::NONE, egui::Key::Tab); });
+        }
+        if self.completion.is_visible() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.completion.dismiss();
+        }
+        if self.completion.is_visible() && ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            self.completion.navigate_up();
+            ctx.input_mut(|i| { i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp); });
+        }
+        if self.completion.is_visible() && ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            self.completion.navigate_down();
+            ctx.input_mut(|i| { i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown); });
+        }
+        // LSP hover at cursor (Ctrl+K)
+        if ctx.input(|i| i.key_pressed(egui::Key::K) && i.modifiers.ctrl) { self.request_lsp_hover(); }
 
         if self.auto_save && self.current_file_path.is_some() && self.last_save.elapsed().as_secs() > 5 {
             self.save_file();
@@ -535,12 +650,20 @@ impl eframe::App for PhobosApp {
                     self.tabs.show(ui);
                     ui.add(egui::Separator::default().spacing(0.0));
                     if self.minimap.visible {
+                        let cursor_line =
+                            self.editor.get_cursor_position().0.saturating_sub(1);
+                        let content = self.editor.content.clone();
                         ui.columns(2, |columns| {
                             self.editor.show(&mut columns[0]);
-                            self.minimap.show(&mut columns[1], &self.editor.content);
+                            if let Some(line) =
+                                self.minimap.show(&mut columns[1], &content, cursor_line)
+                            {
+                                self.editor.jump_to_line(line);
+                            }
                         });
                     } else { self.editor.show(ui); }
                 }
+                render_completion_popup(&mut self.completion, &mut self.editor, ui);
             });
         }
 
@@ -593,11 +716,84 @@ impl eframe::App for PhobosApp {
             });
         }
 
+        if self.lsp_hover.is_some() {
+            let mut close = false;
+            egui::Window::new("🔍 LSP Hover")
+                .resizable(true)
+                .default_size([420.0, 200.0])
+                .show(ctx, |ui| {
+                    if let Some(text) = &self.lsp_hover {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            ui.label(egui::RichText::new(text).monospace().size(12.0));
+                        });
+                    }
+                    if ui.button("Close").clicked() {
+                        close = true;
+                    }
+                });
+            if close {
+                self.lsp_hover = None;
+            }
+        }
         if !self.zen_mode.active {
             egui::TopBottomPanel::bottom("status_bar")
                 .frame(Frame { fill: Color32::from_rgb(0, 122, 204), inner_margin: Margin::symmetric(12.0, 4.0), ..Default::default() })
-                .show(ctx, |ui| { self.status_bar.show(ui, &self.editor); });
+                .show(ctx, |ui| {
+                    let lsp_on = self
+                        .current_file_path
+                        .as_deref()
+                        .map(LspManager::supports)
+                        .unwrap_or(false);
+                    self.status_bar.show(ui, &self.editor, lsp_on);
+                });
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
+    }
+}
+
+fn lsp_to_suggestion(item: &CoreCompletionItem) -> Suggestion {
+    let kind = match item.kind {
+        CoreKind::Method => SuggestionKind::Method,
+        CoreKind::Function | CoreKind::Constructor => SuggestionKind::Function,
+        CoreKind::Field
+        | CoreKind::Variable
+        | CoreKind::Property
+        | CoreKind::Value
+        | CoreKind::Reference => SuggestionKind::Variable,
+        CoreKind::Class
+        | CoreKind::Interface
+        | CoreKind::Module
+        | CoreKind::Enum
+        | CoreKind::Color => SuggestionKind::Type,
+        CoreKind::Keyword => SuggestionKind::Keyword,
+        CoreKind::Snippet => SuggestionKind::Snippet,
+        CoreKind::File => SuggestionKind::Import,
+        CoreKind::Text | CoreKind::Unit => SuggestionKind::Keyword,
+    };
+    let mut desc = item.detail.clone().unwrap_or_default();
+    if let Some(doc) = &item.documentation {
+        let first: String = doc.chars().take(120).collect();
+        if !desc.is_empty() {
+            desc.push_str(" — ");
+        }
+        desc.push_str(&first);
+    }
+    Suggestion {
+        text: item.insert_text.clone().unwrap_or_else(|| item.label.clone()),
+        kind,
+        confidence: 0.85,
+        description: desc,
+    }
+}
+
+fn render_completion_popup(
+    completion: &mut CompletionProvider,
+    editor: &mut CodeEditor,
+    ui: &mut egui::Ui,
+) {
+    if completion.is_visible() && completion.render_popup(ui).is_some() {
+        if let Some(text) = completion.accept_completion() {
+            editor.insert_text(&text);
+        }
     }
 }

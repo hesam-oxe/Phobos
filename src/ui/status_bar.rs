@@ -12,15 +12,20 @@ impl StatusBar {
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &CodeEditor) {
+    pub fn show(&mut self, ui: &mut egui::Ui, editor: &CodeEditor, lsp_on: bool) {
+        let (errors, warnings) = editor.diagnostic_counts();
         ui.horizontal(|ui| {
             // Left side — Git info
             ui.label("🌿 main");
             ui.separator();
-            
-            // Errors/Warnings
-            ui.label("🔴 0");
-            ui.label("🟡 0");
+
+            // Errors/Warnings (live from LSP diagnostics)
+            ui.label(format!("🔴 {}", errors));
+            ui.label(format!("🟡 {}", warnings));
+            ui.separator();
+
+            // LSP status
+            ui.label(if lsp_on { "🟢 LSP" } else { "⚪ LSP" });
             ui.separator();
             
             // Language
@@ -48,7 +53,7 @@ impl StatusBar {
             ui.separator();
             
             // Language specific
-            ui.label(format!("🦀 Rust"));
+            ui.label(format!("⌨ {}", editor.language));
             
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Feedback smiley
