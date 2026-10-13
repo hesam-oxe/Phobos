@@ -1,11 +1,11 @@
 // Phobos IDE - Debugger Module
 // Advanced debugging capabilities with breakpoints and step execution
 
-use std::process::{Command, Stdio, Child};
+use anyhow::{Context, Result};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::io::{Read, Write, BufRead, BufReader};
-use std::sync::mpsc::{channel, Sender, Receiver};
-use anyhow::{Result, Context};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 #[derive(Debug, Clone)]
 pub struct Breakpoint {
@@ -62,7 +62,8 @@ impl Debugger {
             _ => "gdb".to_string(),
         };
 
-        Self { child: None,
+        Self {
+            child: None,
             language: language.to_string(),
             debugger_cmd,
             breakpoints: Vec::new(),
@@ -84,7 +85,8 @@ impl Debugger {
     }
 
     pub fn remove_breakpoint(&mut self, file: &str, line: usize) {
-        self.breakpoints.retain(|bp| !(bp.file == file && bp.line == line));
+        self.breakpoints
+            .retain(|bp| !(bp.file == file && bp.line == line));
     }
 
     pub fn toggle_breakpoint(&mut self, file: &str, line: usize) {
@@ -102,26 +104,26 @@ impl Debugger {
         }
 
         self.current_file = Some(executable.to_path_buf());
-        
+
         let mut cmd = Command::new(&self.debugger_cmd);
-        
+
         match self.language.to_lowercase().as_str() {
             "python" => {
                 cmd.arg("-m").arg("pdb").arg(executable);
-            },
+            }
             "rust" | "c" | "cpp" => {
                 cmd.arg(executable);
-            },
+            }
             "java" => {
                 cmd.arg("-sourcepath").arg(".");
                 cmd.arg("Main"); // Assume Main class
-            },
+            }
             "go" => {
                 cmd.arg("debug");
-            },
+            }
             _ => {
                 cmd.arg(executable);
-            },
+            }
         }
 
         cmd.stdout(Stdio::piped())
@@ -154,7 +156,7 @@ impl Debugger {
         if let Some(ref mut child) = self.child {
             if let Some(mut stdin) = child.stdin.take() {
                 writeln!(stdin, "{}", cmd)?;
-                
+
                 if let Some(stdout) = child.stdout.take() {
                     let mut reader = BufReader::new(stdout);
                     let mut output = String::new();
@@ -169,9 +171,10 @@ impl Debugger {
 
     pub fn get_stack_trace(&mut self) -> Result<Vec<StackFrame>> {
         let output = self.send_command("backtrace")?;
-        
+
         // Parse backtrace output (simplified)
-        let frames: Vec<StackFrame> = output.lines()
+        let frames: Vec<StackFrame> = output
+            .lines()
             .filter_map(|line| {
                 if line.contains("#") {
                     Some(StackFrame {
@@ -191,9 +194,10 @@ impl Debugger {
 
     pub fn get_variables(&mut self) -> Result<Vec<Variable>> {
         let output = self.send_command("info locals")?;
-        
+
         // Parse variables output (simplified)
-        let vars: Vec<Variable> = output.lines()
+        let vars: Vec<Variable> = output
+            .lines()
             .filter_map(|line| {
                 if line.contains('=') {
                     let parts: Vec<&str> = line.split('=').collect();

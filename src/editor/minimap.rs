@@ -19,7 +19,8 @@ impl Minimap {
             return;
         }
 
-        let minimap_content = content.lines()
+        let minimap_content = content
+            .lines()
             .map(|line| if line.len() > 100 { &line[..100] } else { line })
             .collect::<Vec<_>>()
             .join("\n");
@@ -29,7 +30,7 @@ impl Minimap {
             egui::TextEdit::multiline(&mut minimap_content.to_string())
                 .font(egui::TextStyle::Monospace)
                 .interactive(false)
-                .desired_width(self.width)
+                .desired_width(self.width),
         );
     }
 }

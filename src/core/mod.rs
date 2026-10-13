@@ -1,11 +1,11 @@
 //! Phobos IDE - Core Module
 //! Centralized state management and message passing architecture
 
+use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crossbeam_channel::{Sender, Receiver};
 
 use crate::services::lsp::client::LspClient;
 use crate::services::terminal::shell::TerminalShell;
@@ -32,27 +32,13 @@ pub enum Command {
         version: i32,
     },
     /// Request completions from LSP
-    LspCompletion {
-        uri: String,
-        line: u32,
-        column: u32,
-    },
+    LspCompletion { uri: String, line: u32, column: u32 },
     /// Request hover info from LSP
-    LspHover {
-        uri: String,
-        line: u32,
-        column: u32,
-    },
+    LspHover { uri: String, line: u32, column: u32 },
     /// Run build command
-    Build {
-        command: String,
-        cwd: PathBuf,
-    },
+    Build { command: String, cwd: PathBuf },
     /// Run AI completion request
-    AiCompletion {
-        context: String,
-        line: usize,
-    },
+    AiCompletion { context: String, line: usize },
     /// Terminal input
     TerminalInput(String),
     /// Shutdown application
@@ -63,10 +49,7 @@ pub enum Command {
 #[derive(Debug, Clone)]
 pub enum Event {
     /// File was successfully opened
-    FileOpened {
-        path: PathBuf,
-        content: String,
-    },
+    FileOpened { path: PathBuf, content: String },
     /// File save result
     FileSaved {
         path: PathBuf,
@@ -79,18 +62,11 @@ pub enum Event {
         diagnostics: Vec<LspDiagnostic>,
     },
     /// LSP completion items received
-    LspCompletions {
-        completions: Vec<CompletionItem>,
-    },
+    LspCompletions { completions: Vec<CompletionItem> },
     /// LSP hover info received
-    LspHover {
-        contents: String,
-    },
+    LspHover { contents: String },
     /// Build output chunk
-    BuildOutput {
-        line: String,
-        is_error: bool,
-    },
+    BuildOutput { line: String, is_error: bool },
     /// Build finished
     BuildFinished {
         success: bool,
@@ -105,10 +81,7 @@ pub enum Event {
     /// Terminal output
     TerminalOutput(String),
     /// Error occurred
-    Error {
-        message: String,
-        source: String,
-    },
+    Error { message: String, source: String },
     /// Status update
     StatusUpdate(String),
 }
@@ -238,13 +211,13 @@ pub struct AppState {
     pub config: AppConfig,
     /// Working directory (project root)
     pub workspace_root: Option<PathBuf>,
-    
+
     // === Background Services (Arc<Mutex> for thread-safe access) ===
     /// LSP clients by language ID
     pub lsp_clients: HashMap<String, Arc<Mutex<LspClient>>>,
     /// Active terminal shell
     pub terminal: Option<Arc<Mutex<TerminalShell>>>,
-    
+
     // === Message Channels ===
     /// Command sender (UI -> Workers)
     pub command_tx: Sender<Command>,
@@ -261,7 +234,7 @@ impl AppState {
     pub fn new() -> Self {
         let (command_tx, command_rx) = crossbeam_channel::unbounded();
         let (event_tx, event_rx) = crossbeam_channel::unbounded();
-        
+
         Self {
             tabs: HashMap::new(),
             active_tab: None,
@@ -276,28 +249,28 @@ impl AppState {
             event_rx,
         }
     }
-    
+
     /// Get the command sender for dispatching commands
     pub fn command_sender(&self) -> Sender<Command> {
         self.command_tx.clone()
     }
-    
+
     /// Get the event receiver for polling events in UI loop
     pub fn event_receiver(&self) -> &Receiver<Event> {
         &self.event_rx
     }
-    
+
     /// Try to receive next event (non-blocking)
     pub fn try_recv_event(&self) -> Option<Event> {
         self.event_rx.try_recv().ok()
     }
-    
+
     /// Add or update a tab
     pub fn open_tab(&mut self, path: PathBuf, content: String, language: String) {
         let tab = EditorTab::new(path.clone(), content, language);
         self.tabs.insert(path.clone(), tab);
         self.active_tab = Some(path.clone());
-        
+
         // Add to recent files (max 20)
         if let Some(pos) = self.recent_files.iter().position(|p| p == &path) {
             self.recent_files.remove(pos);
@@ -307,7 +280,7 @@ impl AppState {
             self.recent_files.pop();
         }
     }
-    
+
     /// Close a tab
     pub fn close_tab(&mut self, path: &PathBuf) -> Option<EditorTab> {
         if let Some(tab) = self.tabs.remove(path) {
@@ -319,17 +292,17 @@ impl AppState {
             None
         }
     }
-    
+
     /// Get the active tab
     pub fn get_active_tab(&self) -> Option<&EditorTab> {
         self.active_tab.as_ref().and_then(|p| self.tabs.get(p))
     }
-    
+
     /// Get mutable reference to active tab
     pub fn get_active_tab_mut(&mut self) -> Option<&mut EditorTab> {
         self.active_tab.as_ref().and_then(|p| self.tabs.get_mut(p))
     }
-    
+
     /// Update content of active tab
     pub fn update_active_content(&mut self, new_content: String) {
         if let Some(tab) = self.get_active_tab_mut() {
@@ -337,22 +310,23 @@ impl AppState {
             tab.modified = true;
         }
     }
-    
+
     /// Register an LSP client
     pub fn register_lsp_client(&mut self, language_id: String, client: LspClient) {
-        self.lsp_clients.insert(language_id, Arc::new(Mutex::new(client)));
+        self.lsp_clients
+            .insert(language_id, Arc::new(Mutex::new(client)));
     }
-    
+
     /// Get LSP client for a language
     pub fn get_lsp_client(&self, language_id: &str) -> Option<Arc<Mutex<LspClient>>> {
         self.lsp_clients.get(language_id).cloned()
     }
-    
+
     /// Set terminal instance
     pub fn set_terminal(&mut self, terminal: TerminalShell) {
         self.terminal = Some(Arc::new(Mutex::new(terminal)));
     }
-    
+
     /// Get terminal instance
     pub fn get_terminal(&self) -> Option<Arc<Mutex<TerminalShell>>> {
         self.terminal.clone()

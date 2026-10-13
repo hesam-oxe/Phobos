@@ -50,19 +50,19 @@ impl TerminalPanel {
                         ui.label(
                             egui::RichText::new(line)
                                 .color(Color32::from_rgb(0, 255, 0))
-                                .size(12.0)
+                                .size(12.0),
                         );
                     } else if line.starts_with("Error:") {
                         ui.label(
                             egui::RichText::new(line)
                                 .color(Color32::from_rgb(255, 80, 80))
-                                .size(12.0)
+                                .size(12.0),
                         );
                     } else {
                         ui.label(
                             egui::RichText::new(line)
                                 .color(Color32::from_rgb(200, 200, 200))
-                                .size(12.0)
+                                .size(12.0),
                         );
                     }
                 }
@@ -73,7 +73,7 @@ impl TerminalPanel {
             egui::TextEdit::singleline(&mut self.input)
                 .hint_text(format!("{} $ ", self.current_dir))
                 .font(egui::TextStyle::Monospace)
-                .desired_width(f32::INFINITY)
+                .desired_width(f32::INFINITY),
         );
 
         if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -97,7 +97,8 @@ impl TerminalPanel {
                 self.output.push("  help     - Show this message".into());
                 self.output.push("  clear    - Clear terminal".into());
                 self.output.push("  ls       - List files".into());
-                self.output.push("  pwd      - Print working directory".into());
+                self.output
+                    .push("  pwd      - Print working directory".into());
                 self.output.push("  date     - Show current date".into());
                 self.output.push("  whoami   - Show current user".into());
                 self.output.push("  version  - Show Phobos version".into());
@@ -109,7 +110,11 @@ impl TerminalPanel {
                 if let Ok(entries) = std::fs::read_dir(".") {
                     for entry in entries.flatten() {
                         let name = entry.file_name().to_string_lossy().to_string();
-                        let icon = if entry.path().is_dir() { "📁" } else { "📄" };
+                        let icon = if entry.path().is_dir() {
+                            "📁"
+                        } else {
+                            "📄"
+                        };
                         self.output.push(format!("  {} {}", icon, name));
                     }
                 }
@@ -120,16 +125,19 @@ impl TerminalPanel {
                 }
             }
             "date" => {
-                self.output.push(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+                self.output
+                    .push(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
             }
             "whoami" => {
                 self.output.push("💀 Phobos User".into());
             }
             "version" => {
-                self.output.push("Phobos IDE v0.3.0 — The God of Fear".into());
+                self.output
+                    .push("Phobos IDE v0.3.0 — The God of Fear".into());
             }
             _ => {
-                self.output.push(format!("Error: command not found: {}", cmd));
+                self.output
+                    .push(format!("Error: command not found: {}", cmd));
             }
         }
 

@@ -2,4 +2,4 @@
 
 pub mod client;
 
-pub use client::{LspClient, LspServerConfig, LspState, create_lsp_client};
+pub use client::{create_lsp_client, LspClient, LspServerConfig, LspState};

@@ -2,4 +2,4 @@
 
 pub mod shell;
 
-pub use shell::{TerminalShell, TerminalOutput, AnsiParser, create_terminal};
+pub use shell::{create_terminal, AnsiParser, TerminalOutput, TerminalShell};

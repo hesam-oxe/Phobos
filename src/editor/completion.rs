@@ -1,9 +1,9 @@
 // Phobos IDE - Completion Module
 // Intelligent code completion system with AI integration
 
+use crate::ai::ghost_typer::{GhostTyper, Suggestion, SuggestionKind};
 use eframe::egui;
 use egui::{Color32, FontId, Frame, Margin, Rounding, ScrollArea, Ui, Vec2};
-use crate::ai::ghost_typer::{GhostTyper, Suggestion, SuggestionKind};
 
 pub struct CompletionProvider {
     ghost_typer: GhostTyper,
@@ -91,10 +91,14 @@ impl CompletionProvider {
                             egui::Label::new(
                                 egui::RichText::new(&suggestion.text)
                                     .font(FontId::monospace(14.0))
-                                    .color(if is_selected { Color32::WHITE } else { Color32::LIGHT_GRAY })
-                                    .background_color(bg_color)
+                                    .color(if is_selected {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::LIGHT_GRAY
+                                    })
+                                    .background_color(bg_color),
                             )
-                            .sense(egui::Sense::click())
+                            .sense(egui::Sense::click()),
                         );
 
                         if response.clicked() {

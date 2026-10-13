@@ -1,8 +1,8 @@
 // Phobos IDE - Bug Finder AI Module
 // Intelligent bug detection and code analysis system
 
-use std::collections::HashMap;
 use regex::Regex;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct BugReport {
@@ -68,7 +68,10 @@ impl Rule for UnusedVariableRule {
                     severity: Severity::Low,
                     category: BugCategory::Style,
                     message: format!("Variable '{}' may be unused", var_name),
-                    suggestion: format!("Consider prefixing with '_' or using the variable: _{}", var_name),
+                    suggestion: format!(
+                        "Consider prefixing with '_' or using the variable: _{}",
+                        var_name
+                    ),
                     code_snippet: Some(code.to_string()),
                 });
             }
@@ -197,22 +200,24 @@ impl BugFinder {
 
     fn initialize_rules(&mut self) {
         // Add rules for all categories
-        self.rules.insert(BugCategory::Style, vec![
-            Box::new(UnusedVariableRule::new()),
-            Box::new(TodoCommentRule::new()),
-        ]);
-        self.rules.insert(BugCategory::PotentialBug, vec![
-            Box::new(UnwrapRule),
-            Box::new(MutableRefRule),
-        ]);
-        self.rules.insert(BugCategory::Logic, vec![
-            Box::new(InfiniteLoopRule),
-        ]);
+        self.rules.insert(
+            BugCategory::Style,
+            vec![
+                Box::new(UnusedVariableRule::new()),
+                Box::new(TodoCommentRule::new()),
+            ],
+        );
+        self.rules.insert(
+            BugCategory::PotentialBug,
+            vec![Box::new(UnwrapRule), Box::new(MutableRefRule)],
+        );
+        self.rules
+            .insert(BugCategory::Logic, vec![Box::new(InfiniteLoopRule)]);
     }
 
     pub fn analyze(&self, code: &str) -> Vec<BugReport> {
         let mut reports = Vec::new();
-        
+
         for (line_number, line) in code.lines().enumerate() {
             for (_, rules) in &self.rules {
                 for rule in rules {
@@ -262,7 +267,7 @@ impl BugFinder {
     pub fn analyze_file(&self, file_path: &str, code: &str) -> FileAnalysisReport {
         let bugs = self.analyze(code);
         let total_lines = code.lines().count();
-        
+
         FileAnalysisReport {
             file_path: file_path.to_string(),
             total_lines,

@@ -79,17 +79,23 @@ impl CodeExplainer {
     fn initialize_templates(&mut self) {
         self.explanation_templates.insert("rust_fn", 
             "This function {name} takes {params} and returns {return_type}. It appears to {purpose}.");
-        self.explanation_templates.insert("rust_struct",
-            "This struct {name} represents {purpose}. It has {field_count} fields: {fields}.");
-        self.explanation_templates.insert("rust_enum",
-            "This enum {name} defines {variant_count} possible states: {variants}.");
-        self.explanation_templates.insert("rust_trait",
-            "This trait {name} defines a contract with {method_count} methods: {methods}.");
+        self.explanation_templates.insert(
+            "rust_struct",
+            "This struct {name} represents {purpose}. It has {field_count} fields: {fields}.",
+        );
+        self.explanation_templates.insert(
+            "rust_enum",
+            "This enum {name} defines {variant_count} possible states: {variants}.",
+        );
+        self.explanation_templates.insert(
+            "rust_trait",
+            "This trait {name} defines a contract with {method_count} methods: {methods}.",
+        );
     }
 
     pub fn explain(&self, code: &str) -> Explanation {
         let structure = self.analyze_structure(code);
-        
+
         let summary = self.generate_summary(&structure);
         let detailed = self.generate_detailed_explanation(code, &structure);
         let complexity = self.assess_complexity(code, &structure);
@@ -166,7 +172,12 @@ impl CodeExplainer {
         };
 
         // Determine visibility
-        let visibility = if line.contains("pub fn") { "public" } else { "private" }.to_string();
+        let visibility = if line.contains("pub fn") {
+            "public"
+        } else {
+            "private"
+        }
+        .to_string();
 
         // Generate simple description
         let description = format!("Function that processes {} parameters", parameters.len());
@@ -186,10 +197,18 @@ impl CodeExplainer {
         }
 
         let name_start = line.find("struct ")? + 7;
-        let name_end = line[name_start..].find('{').or_else(|| line[name_start..].find(';'))? + name_start;
+        let name_end = line[name_start..]
+            .find('{')
+            .or_else(|| line[name_start..].find(';'))?
+            + name_start;
         let name = line[name_start..name_end].trim().to_string();
 
-        let visibility = if line.contains("pub struct") { "public" } else { "private" }.to_string();
+        let visibility = if line.contains("pub struct") {
+            "public"
+        } else {
+            "private"
+        }
+        .to_string();
 
         // Simple field extraction (works for single-line structs)
         let fields = Vec::new(); // Would need more complex parsing for multi-line
@@ -212,7 +231,12 @@ impl CodeExplainer {
         let name_end = line[name_start..].find('{')? + name_start;
         let name = line[name_start..name_end].trim().to_string();
 
-        let visibility = if line.contains("pub enum") { "public" } else { "private" }.to_string();
+        let visibility = if line.contains("pub enum") {
+            "public"
+        } else {
+            "private"
+        }
+        .to_string();
 
         // Extract variants from the same line if possible
         let variants = Vec::new(); // Would need more complex parsing
@@ -233,7 +257,12 @@ impl CodeExplainer {
         let name_end = line[name_start..].find('{')? + name_start;
         let name = line[name_start..name_end].trim().to_string();
 
-        let visibility = if line.contains("pub trait") { "public" } else { "private" }.to_string();
+        let visibility = if line.contains("pub trait") {
+            "public"
+        } else {
+            "private"
+        }
+        .to_string();
 
         let methods = Vec::new();
 
@@ -417,7 +446,8 @@ impl CodeExplainer {
 
         // Check for unwrap usage
         if code.contains(".unwrap()") {
-            suggestions.push("Consider using proper error handling instead of .unwrap()".to_string());
+            suggestions
+                .push("Consider using proper error handling instead of .unwrap()".to_string());
         }
 
         // Check for TODO comments
@@ -429,7 +459,10 @@ impl CodeExplainer {
         for func in &structure.functions {
             // Simplified check - would need better analysis in production
             if func.name.len() > 30 {
-                suggestions.push(format!("Consider renaming '{}' to be more concise", func.name));
+                suggestions.push(format!(
+                    "Consider renaming '{}' to be more concise",
+                    func.name
+                ));
             }
         }
 
@@ -447,7 +480,7 @@ impl CodeExplainer {
 
     pub fn explain_to_beginner(&self, code: &str) -> String {
         let explanation = self.explain(code);
-        
+
         format!(
             "📚 **Simple Explanation**\n\n\
              {}\n\n\
@@ -456,8 +489,18 @@ impl CodeExplainer {
              **Tips**:\n{}",
             explanation.summary,
             explanation.complexity,
-            explanation.key_concepts.iter().map(|c| format!("- {}", c)).collect::<Vec<_>>().join("\n"),
-            explanation.suggestions.iter().map(|s| format!("- {}", s)).collect::<Vec<_>>().join("\n"),
+            explanation
+                .key_concepts
+                .iter()
+                .map(|c| format!("- {}", c))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            explanation
+                .suggestions
+                .iter()
+                .map(|s| format!("- {}", s))
+                .collect::<Vec<_>>()
+                .join("\n"),
         )
     }
 }
@@ -494,10 +537,10 @@ async fn process_data(items: Vec<i32>) -> Result<(), Error> {
     Ok(())
 }
 "#;
-        
+
         let simple_exp = explainer.explain(simple_code);
         let complex_exp = explainer.explain(complex_code);
-        
+
         assert_eq!(simple_exp.complexity, ComplexityLevel::Beginner);
         assert!(complex_exp.complexity as u8 >= simple_exp.complexity as u8);
     }

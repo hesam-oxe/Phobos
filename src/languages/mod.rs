@@ -1,22 +1,22 @@
 pub mod assembly;
 pub mod c_family;
 pub mod csharp;
-pub mod rust;
+pub mod data_langs;
+pub mod docker;
 pub mod go;
-pub mod python;
 pub mod java;
 pub mod javascript;
-pub mod php;
-pub mod ruby;
-pub mod sql;
-pub mod pascal;
-pub mod docker;
-pub mod data_langs;
-pub mod markdown;
-pub mod shell;
-pub mod web;
-pub mod swift;
 pub mod kotlin;
+pub mod markdown;
+pub mod pascal;
+pub mod php;
+pub mod python;
+pub mod ruby;
+pub mod rust;
+pub mod shell;
+pub mod sql;
+pub mod swift;
+pub mod web;
 
 pub trait LanguageSupport {
     fn name(&self) -> &str;
@@ -30,9 +30,11 @@ pub struct LanguageRegistry {
 
 impl LanguageRegistry {
     pub fn new() -> Self {
-        Self { languages: Vec::new() }
+        Self {
+            languages: Vec::new(),
+        }
     }
-    
+
     pub fn detect(&self, filename: &str) -> Option<&str> {
         for lang in &self.languages {
             for ext in lang.extensions() {

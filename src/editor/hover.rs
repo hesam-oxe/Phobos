@@ -1,9 +1,9 @@
 // Phobos IDE - Hover Module
 // Intelligent hover information and tooltips
 
-use eframe::egui;
-use egui::{Color32, FontId, Frame, Margin, Rounding, Pos2, Ui, Vec2};
 use crate::ai::code_explainer::{CodeExplainer, Explanation};
+use eframe::egui;
+use egui::{Color32, FontId, Frame, Margin, Pos2, Rounding, Ui, Vec2};
 
 pub struct HoverProvider {
     explainer: CodeExplainer,
@@ -24,7 +24,7 @@ impl HoverProvider {
 
     pub fn update_hover(&mut self, code: &str, cursor_pos: usize, mouse_pos: Pos2) {
         self.last_hover_pos = Some(mouse_pos);
-        
+
         // Extract word at cursor position
         if let Some(word) = self.extract_word_at_position(code, cursor_pos) {
             if self.current_word.as_ref() != Some(&word) {
@@ -93,54 +93,71 @@ impl HoverProvider {
                     .show(ui.ctx(), |ui| {
                         ui.vertical(|ui| {
                             // Summary
-                            ui.label(egui::RichText::new("📖 Code Overview")
-                                .font(FontId::proportional(14.0))
-                                .strong()
-                                .color(Color32::LIGHT_BLUE));
-                            
+                            ui.label(
+                                egui::RichText::new("📖 Code Overview")
+                                    .font(FontId::proportional(14.0))
+                                    .strong()
+                                    .color(Color32::LIGHT_BLUE),
+                            );
+
                             ui.separator();
-                            
+
                             ScrollArea::vertical().show(ui, |ui| {
-                                ui.label(egui::RichText::new(&explanation.summary)
-                                    .font(FontId::proportional(11.0))
-                                    .color(Color32::WHITE));
-                                
+                                ui.label(
+                                    egui::RichText::new(&explanation.summary)
+                                        .font(FontId::proportional(11.0))
+                                        .color(Color32::WHITE),
+                                );
+
                                 ui.add_space(8.0);
-                                
+
                                 // Complexity
-                                ui.label(egui::RichText::new(format!("📊 Complexity: {:?}", explanation.complexity))
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "📊 Complexity: {:?}",
+                                        explanation.complexity
+                                    ))
                                     .font(FontId::monospace(10.0))
-                                    .color(Color32::YELLOW));
-                                
+                                    .color(Color32::YELLOW),
+                                );
+
                                 ui.add_space(8.0);
-                                
+
                                 // Key concepts
                                 if !explanation.key_concepts.is_empty() {
-                                    ui.label(egui::RichText::new("🔑 Key Concepts:")
-                                        .font(FontId::proportional(11.0))
-                                        .strong()
-                                        .color(Color32::LIGHT_GREEN));
-                                    
+                                    ui.label(
+                                        egui::RichText::new("🔑 Key Concepts:")
+                                            .font(FontId::proportional(11.0))
+                                            .strong()
+                                            .color(Color32::LIGHT_GREEN),
+                                    );
+
                                     for concept in &explanation.key_concepts {
-                                        ui.label(egui::RichText::new(format!("  • {}", concept))
-                                            .font(FontId::monospace(10.0))
-                                            .color(Color32::GRAY));
+                                        ui.label(
+                                            egui::RichText::new(format!("  • {}", concept))
+                                                .font(FontId::monospace(10.0))
+                                                .color(Color32::GRAY),
+                                        );
                                     }
                                 }
-                                
+
                                 ui.add_space(8.0);
-                                
+
                                 // Suggestions
                                 if !explanation.suggestions.is_empty() {
-                                    ui.label(egui::RichText::new("💡 Suggestions:")
-                                        .font(FontId::proportional(11.0))
-                                        .strong()
-                                        .color(Color32::LIGHT_YELLOW));
-                                    
+                                    ui.label(
+                                        egui::RichText::new("💡 Suggestions:")
+                                            .font(FontId::proportional(11.0))
+                                            .strong()
+                                            .color(Color32::LIGHT_YELLOW),
+                                    );
+
                                     for suggestion in &explanation.suggestions {
-                                        ui.label(egui::RichText::new(format!("  → {}", suggestion))
-                                            .font(FontId::monospace(10.0))
-                                            .color(Color32::LIGHT_BLUE));
+                                        ui.label(
+                                            egui::RichText::new(format!("  → {}", suggestion))
+                                                .font(FontId::monospace(10.0))
+                                                .color(Color32::LIGHT_BLUE),
+                                        );
                                     }
                                 }
                             });

@@ -1,10 +1,10 @@
 // Phobos IDE - Compiler Module
 // Multi-language compilation and build system
 
-use std::process::{Command, Stdio};
-use std::path::{Path, PathBuf};
+use anyhow::{Context, Result};
 use std::io::{Read, Write};
-use anyhow::{Result, Context};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone)]
 pub struct CompilerConfig {
@@ -16,18 +16,18 @@ pub struct CompilerConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompilerType {
-    Rustc,      // rustc
-    Gcc,        // gcc/g++
-    Clang,      // clang/clang++
-    Javac,      // javac
-    Python,     // python3 (interpreter)
-    Node,       // node (interpreter)
-    Dotnet,     // dotnet
-    Go,         // go
-    Swift,      // swiftc
-    Pascal,     // fpc
-    Php,        // php
-    Ruby,       // ruby
+    Rustc,  // rustc
+    Gcc,    // gcc/g++
+    Clang,  // clang/clang++
+    Javac,  // javac
+    Python, // python3 (interpreter)
+    Node,   // node (interpreter)
+    Dotnet, // dotnet
+    Go,     // go
+    Swift,  // swiftc
+    Pascal, // fpc
+    Php,    // php
+    Ruby,   // ruby
     Custom(String),
 }
 
@@ -98,9 +98,12 @@ impl Compiler {
 
     pub fn compile(&self, source_file: &Path) -> Result<CompilationResult> {
         let command = self.compiler_type.default_command();
-        
+
         if command.is_empty() {
-            anyhow::bail!("No compiler configured for language: {}", self.config.language);
+            anyhow::bail!(
+                "No compiler configured for language: {}",
+                self.config.language
+            );
         }
 
         // Ensure output directory exists
@@ -108,7 +111,7 @@ impl Compiler {
 
         // Build command arguments
         let mut args = Vec::new();
-        
+
         match self.compiler_type {
             CompilerType::Rustc => {
                 args.push(source_file.to_string_lossy().to_string());
@@ -120,7 +123,11 @@ impl Compiler {
             CompilerType::Gcc | CompilerType::Clang => {
                 args.push(source_file.to_string_lossy().to_string());
                 args.push("-o".to_string());
-                let ext = if self.compiler_type == CompilerType::Gcc { "out" } else { "out" };
+                let ext = if self.compiler_type == CompilerType::Gcc {
+                    "out"
+                } else {
+                    "out"
+                };
                 let output = self.config.output_dir.join(format!("output.{}", ext));
                 args.push(output.to_string_lossy().to_string());
                 args.extend(self.config.flags.clone());
@@ -159,10 +166,17 @@ impl Compiler {
             }
         }
 
-        // Execute compilation
+        // Execute compilation (resolve via PATH first for a clear error)
         let start_time = std::time::Instant::now();
-        
-        let mut child = Command::new(command)
+
+        let resolved = which::which(command).with_context(|| {
+            format!(
+                "Compiler '{command}' not found for language '{}'. Install it and ensure it is on PATH.",
+                self.config.language
+            )
+        })?;
+
+        let mut child = Command::new(resolved)
             .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

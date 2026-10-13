@@ -1,9 +1,9 @@
 // Phobos IDE - Diagnostics Module
 // Real-time code diagnostics and error reporting
 
+use crate::ai::bug_finder::{BugCategory, BugFinder, BugReport, Severity};
 use eframe::egui;
 use egui::{Color32, FontId, Frame, Margin, Rounding, ScrollArea, Ui};
-use crate::ai::bug_finder::{BugFinder, BugReport, Severity, BugCategory};
 
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
@@ -53,14 +53,17 @@ impl DiagnosticsPanel {
 
     pub fn analyze(&mut self, code: &str) {
         let reports = self.finder.analyze(code);
-        self.diagnostics = reports.iter().map(|r| Diagnostic {
-            line: r.line_number,
-            column: 0,
-            severity: DiagnosticSeverity::from(&r.severity),
-            message: r.message.clone(),
-            source: "AI Bug Finder".to_string(),
-            code: Some(r.suggestion.clone()),
-        }).collect();
+        self.diagnostics = reports
+            .iter()
+            .map(|r| Diagnostic {
+                line: r.line_number,
+                column: 0,
+                severity: DiagnosticSeverity::from(&r.severity),
+                message: r.message.clone(),
+                source: "AI Bug Finder".to_string(),
+                code: Some(r.suggestion.clone()),
+            })
+            .collect();
     }
 
     pub fn set_language(&mut self, language: &str) {
@@ -74,7 +77,11 @@ impl DiagnosticsPanel {
 
     pub fn render_panel(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("🔍 Problems").font(FontId::proportional(16.0)).strong());
+            ui.label(
+                egui::RichText::new("🔍 Problems")
+                    .font(FontId::proportional(16.0))
+                    .strong(),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("🔄 Refresh").clicked() {
                     // Trigger re-analysis
@@ -90,10 +97,26 @@ impl DiagnosticsPanel {
             egui::ComboBox::from_id_source("severity_filter")
                 .selected_text(format!("{:?}", self.filter_severity))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.filter_severity, DiagnosticSeverity::Error, "Errors");
-                    ui.selectable_value(&mut self.filter_severity, DiagnosticSeverity::Warning, "Warnings");
-                    ui.selectable_value(&mut self.filter_severity, DiagnosticSeverity::Info, "Info");
-                    ui.selectable_value(&mut self.filter_severity, DiagnosticSeverity::Hint, "Hints");
+                    ui.selectable_value(
+                        &mut self.filter_severity,
+                        DiagnosticSeverity::Error,
+                        "Errors",
+                    );
+                    ui.selectable_value(
+                        &mut self.filter_severity,
+                        DiagnosticSeverity::Warning,
+                        "Warnings",
+                    );
+                    ui.selectable_value(
+                        &mut self.filter_severity,
+                        DiagnosticSeverity::Info,
+                        "Info",
+                    );
+                    ui.selectable_value(
+                        &mut self.filter_severity,
+                        DiagnosticSeverity::Hint,
+                        "Hints",
+                    );
                 });
         });
 
@@ -114,31 +137,43 @@ impl DiagnosticsPanel {
                 };
 
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(match diagnostic.severity {
-                        DiagnosticSeverity::Error => "❌",
-                        DiagnosticSeverity::Warning => "⚠️",
-                        DiagnosticSeverity::Info => "ℹ️",
-                        DiagnosticSeverity::Hint => "💡",
-                    }).color(color));
-                    
+                    ui.label(
+                        egui::RichText::new(match diagnostic.severity {
+                            DiagnosticSeverity::Error => "❌",
+                            DiagnosticSeverity::Warning => "⚠️",
+                            DiagnosticSeverity::Info => "ℹ️",
+                            DiagnosticSeverity::Hint => "💡",
+                        })
+                        .color(color),
+                    );
+
                     ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(&diagnostic.message)
-                            .color(color)
-                            .font(FontId::monospace(12.0)));
-                        ui.label(egui::RichText::new(format!("Line {} | {}", diagnostic.line, diagnostic.source))
+                        ui.label(
+                            egui::RichText::new(&diagnostic.message)
+                                .color(color)
+                                .font(FontId::monospace(12.0)),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Line {} | {}",
+                                diagnostic.line, diagnostic.source
+                            ))
                             .color(Color32::DARK_GRAY)
-                            .font(FontId::proportional(10.0)));
-                        
+                            .font(FontId::proportional(10.0)),
+                        );
+
                         if let Some(code) = &diagnostic.code {
                             if !code.is_empty() {
-                                ui.label(egui::RichText::new(format!("💡 Suggestion: {}", code))
-                                    .color(Color32::LIGHT_BLUE)
-                                    .font(FontId::monospace(11.0)));
+                                ui.label(
+                                    egui::RichText::new(format!("💡 Suggestion: {}", code))
+                                        .color(Color32::LIGHT_BLUE)
+                                        .font(FontId::monospace(11.0)),
+                                );
                             }
                         }
                     });
                 });
-                
+
                 ui.add_space(4.0);
                 ui.separator();
             }

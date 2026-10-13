@@ -36,7 +36,11 @@ impl FileExplorer {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
                 let is_dir = path.is_dir();
-                let icon = if is_dir { "📁" } else { self.file_icon(&name) };
+                let icon = if is_dir {
+                    "📁"
+                } else {
+                    self.file_icon(&name)
+                };
                 let size = if !is_dir {
                     if let Ok(meta) = entry.metadata() {
                         self.format_size(meta.len())
@@ -56,7 +60,8 @@ impl FileExplorer {
             }
         }
         self.entries.sort_by(|a, b| {
-            b.is_dir.cmp(&a.is_dir)
+            b.is_dir
+                .cmp(&a.is_dir)
                 .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
     }
@@ -116,7 +121,7 @@ impl FileExplorer {
                 let selected = self.selected == Some(i);
                 let response = ui.selectable_label(
                     selected,
-                    format!("{} {}  {}", entry.icon, entry.name, entry.size)
+                    format!("{} {}  {}", entry.icon, entry.name, entry.size),
                 );
 
                 if response.clicked() {

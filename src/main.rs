@@ -3,16 +3,16 @@
 #![allow(unused_variables)]
 #![allow(future_incompatible)]
 
+mod ai;
 mod app;
+mod build;
 mod core;
 mod editor;
 mod languages;
-mod ai;
 mod low_level;
-mod ui;
-mod build;
-mod utils;
 mod services;
+mod ui;
+mod utils;
 
 use app::PhobosApp;
 use eframe::egui;

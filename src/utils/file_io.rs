@@ -19,7 +19,7 @@ impl FileIO {
                 (path, content)
             })
     }
-    
+
     pub fn save_file_dialog(content: &str) -> Option<PathBuf> {
         rfd::FileDialog::new()
             .add_filter("All Files", &["*"])
@@ -29,15 +29,15 @@ impl FileIO {
                 path
             })
     }
-    
+
     pub fn open_folder_dialog() -> Option<PathBuf> {
         rfd::FileDialog::new().pick_folder()
     }
-    
+
     pub fn read_file(path: &str) -> Option<String> {
         fs::read_to_string(path).ok()
     }
-    
+
     pub fn write_file(path: &str, content: &str) -> bool {
         fs::write(path, content).is_ok()
     }

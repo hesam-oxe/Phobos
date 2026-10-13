@@ -25,8 +25,11 @@ tree-sitter-php = "0.20"
 tree-sitter-c-sharp = "0.20"
 tree-sitter-bash = "0.20"
 tree-sitter-json = "0.20"
-tree-sitter-yaml = "0.5"
-tree-sitter-html = "0.20"
+# YAML grammar temporarily disabled: tree-sitter-yaml 0.5 does not exist on
+# crates.io and 0.6+/0.7 needs tree-sitter >=0.21 (incompatible with our 0.20
+# stack). Re-enable with a coherent tree-sitter upgrade. See code_editor.rs.
+# tree-sitter-yaml = "0.6"
+tree-sitter-html = "=0.20.0"
 tree-sitter-css = "0.20"
 
 # Async Runtime
@@ -66,6 +69,9 @@ env_logger = "0.11"
 # Process Management
 which = "6"
 chrono = "0.4"
+
+# Regex (AI analysers)
+regex = "1"
 
 # Git (optional for v0.2)
 git2 = "0.18"

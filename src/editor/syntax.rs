@@ -34,7 +34,7 @@ impl HighlightTheme {
             punctuation: Color32::from_rgb(212, 212, 212),
         }
     }
-    
+
     /// Light theme
     pub fn light() -> Self {
         Self {
@@ -50,7 +50,7 @@ impl HighlightTheme {
             punctuation: Color32::from_rgb(50, 50, 50),
         }
     }
-    
+
     /// Monokai theme
     pub fn monokai() -> Self {
         Self {
@@ -79,7 +79,7 @@ impl SyntaxHighlighter {
             theme: HighlightTheme::dark(),
         }
     }
-    
+
     pub fn get_extension(&self, lang: &str) -> &'static str {
         match lang.to_lowercase().as_str() {
             "asm" | "assembly" => "asm",
@@ -113,24 +113,37 @@ impl SyntaxHighlighter {
 
     pub fn language_list() -> Vec<(&'static str, &'static str)> {
         vec![
-            ("🟣 Assembly", "asm"), ("🔵 C", "c"), ("🔵 C++", "cpp"),
-            ("🟣 C#", "cs"), ("🟠 Rust", "rust"), ("🟦 Go", "go"),
-            ("🟡 Python", "py"), ("☕ Java", "java"),
-            ("🟨 JavaScript", "js"), ("🟦 TypeScript", "ts"),
-            ("🐘 PHP", "php"), ("💎 Ruby", "rb"),
-            ("🗄️ SQL", "sql"), ("🏛️ Pascal", "pas"),
-            ("🕊️ Swift", "swift"), ("🟣 Kotlin", "kt"),
-            ("🐚 Shell", "sh"), ("🌐 HTML", "html"),
-            ("🎨 CSS", "css"), ("📋 JSON", "json"),
-            ("📝 YAML", "yaml"), ("📘 Markdown", "md"),
-            ("🐳 Dockerfile", "dockerfile"), ("⚙️ TOML", "toml"),
+            ("🟣 Assembly", "asm"),
+            ("🔵 C", "c"),
+            ("🔵 C++", "cpp"),
+            ("🟣 C#", "cs"),
+            ("🟠 Rust", "rust"),
+            ("🟦 Go", "go"),
+            ("🟡 Python", "py"),
+            ("☕ Java", "java"),
+            ("🟨 JavaScript", "js"),
+            ("🟦 TypeScript", "ts"),
+            ("🐘 PHP", "php"),
+            ("💎 Ruby", "rb"),
+            ("🗄️ SQL", "sql"),
+            ("🏛️ Pascal", "pas"),
+            ("🕊️ Swift", "swift"),
+            ("🟣 Kotlin", "kt"),
+            ("🐚 Shell", "sh"),
+            ("🌐 HTML", "html"),
+            ("🎨 CSS", "css"),
+            ("📋 JSON", "json"),
+            ("📝 YAML", "yaml"),
+            ("📘 Markdown", "md"),
+            ("🐳 Dockerfile", "dockerfile"),
+            ("⚙️ TOML", "toml"),
         ]
     }
-    
+
     pub fn set_theme(&mut self, theme: HighlightTheme) {
         self.theme = theme;
     }
-    
+
     pub fn theme(&self) -> &HighlightTheme {
         &self.theme
     }
