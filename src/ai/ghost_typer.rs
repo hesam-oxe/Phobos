@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_keyword_suggestions() {
-        let typer = GhostTyper::new("rust");
+        let mut typer = GhostTyper::new("rust");
         let suggestions = typer.get_suggestions("", 0);
         assert!(suggestions.iter().any(|s| s.kind == SuggestionKind::Keyword));
     }
