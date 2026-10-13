@@ -30,7 +30,29 @@ pub struct LanguageRegistry {
 
 impl LanguageRegistry {
     pub fn new() -> Self {
-        Self { languages: Vec::new() }
+        Self {
+            languages: vec![
+                Box::new(rust::RustLang::new()),
+                Box::new(python::PythonLang::new()),
+                Box::new(javascript::JavaScriptLang::new()),
+                Box::new(go::GoLang::new()),
+                Box::new(java::JavaLang::new()),
+                Box::new(c_family::CFamilyLang::new()),
+                Box::new(csharp::CSharpLang::new()),
+                Box::new(assembly::AssemblyLang::new()),
+                Box::new(ruby::RubyLang::new()),
+                Box::new(php::PhpLang::new()),
+                Box::new(sql::SqlLang::new()),
+                Box::new(pascal::PascalLang::new()),
+                Box::new(shell::ShellLang::new()),
+                Box::new(web::WebLang::new()),
+                Box::new(swift::SwiftLang::new()),
+                Box::new(kotlin::KotlinLang::new()),
+                Box::new(markdown::MarkdownLang::new()),
+                Box::new(docker::DockerLang::new()),
+                Box::new(data_langs::DataLang::new()),
+            ],
+        }
     }
     
     pub fn detect(&self, filename: &str) -> Option<&str> {

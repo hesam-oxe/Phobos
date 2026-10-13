@@ -2,9 +2,8 @@
 //! Custom editor wrapping egui::TextEdit with syntax highlighting, gutter, and LSP integration
 
 use eframe::egui;
-use egui::{Color32, FontId, TextFormat, Rect, Response, Sense};
-use std::sync::Arc;
-use tree_sitter::{Parser, Language, Query, QueryCursor};
+use egui::{Color32, FontId, TextFormat, Rect, Response};
+use tree_sitter::{Parser, Language, Query};
 use crate::core::{LspDiagnostic, CompletionItem};
 
 /// Syntax-highlighted text format
@@ -66,13 +65,13 @@ impl Default for EditorConfig {
 
 /// Main Code Editor widget
 pub struct CodeEditor {
-    content: String,
-    language: String,
-    config: EditorConfig,
+    pub content: String,
+    pub language: String,
+    pub config: EditorConfig,
     
     // Tree-sitter parser and highlighter
     parser: Option<Parser>,
-    language_gr grammar: Option<Language>,
+    language_grammar: Option<Language>,
     highlights_query: Option<Query>,
     
     // Cached syntax highlights (computed on background thread)
@@ -84,7 +83,7 @@ pub struct CodeEditor {
     gutter_markers: Vec<Vec<GutterMarker>>, // per-line markers
     
     // Cursor and selection
-    cursor_position: usize,
+    pub cursor_pos: usize,
     selection_range: Option<(usize, usize)>,
     
     // Viewport state
@@ -108,13 +107,13 @@ impl CodeEditor {
             language: "rust".to_string(),
             config: EditorConfig::default(),
             parser: None,
-            language_gr grammar: None,
+            language_grammar: None,
             highlights_query: None,
             cached_highlights: Vec::new(),
             highlights_version: 0,
             content_version: 0,
             gutter_markers: Vec::new(),
-            cursor_position: 0,
+            cursor_pos: 0,
             selection_range: None,
             scroll_offset_y: 0.0,
             visible_lines: 0..0,
@@ -149,16 +148,16 @@ impl CodeEditor {
             "csharp" | "cs" | "c#" => Some(tree_sitter_c_sharp::language()),
             "bash" | "sh" => Some(tree_sitter_bash::language()),
             "json" => Some(tree_sitter_json::language()),
-            "yaml" | "yml" => Some(tree_sitter_yaml::language()),
             "html" => Some(tree_sitter_html::language()),
             "css" => Some(tree_sitter_css::language()),
+            // YAML handled via fallback highlighter (no native grammar to avoid version conflict)
             _ => None,
         };
         
         if let Some(lang) = lang_result {
             if parser.set_language(lang).is_ok() {
                 self.parser = Some(parser);
-                self.language_gr grammar = Some(lang);
+                self.language_grammar = Some(lang);
                 
                 // TODO: Load highlights query from language-specific queries
                 // For now, we'll use basic regex-based highlighting as fallback
@@ -216,7 +215,7 @@ impl CodeEditor {
     fn compute_syntax_highlights(&self, code: &str) -> Vec<FormatRange> {
         let mut highlights = Vec::new();
         
-        if let (Some(ref parser), Some(_lang)) = (&self.parser, &self.language_gr grammar) {
+        if let (Some(ref parser), Some(_lang)) = (&self.parser, &self.language_grammar) {
             if let Some(tree) = parser.parse(code, None) {
                 let root = tree.root_node();
                 
@@ -448,25 +447,51 @@ impl CodeEditor {
     }
     
     /// Render the main editor content
-    fn render_editor_content(&mut self, ui: &mut egui::Ui, font_id: FontId, line_height: f32, char_width: f32) {
-        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+    fn render_editor_content(&mut self, ui: &mut egui::Ui, font_id: FontId, _line_height: f32, _char_width: f32) {
+        // Sort + clamp highlights, fill gaps with default text color
+        let mut ranges = self.cached_highlights.clone();
+        ranges.sort_by_key(|r| r.start);
+        let default_color = Color32::from_rgb(212, 212, 212);
+        let layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
             let mut layout_job = egui::text::LayoutJob::default();
-            
-            // Apply syntax highlighting
-            for highlight in &self.cached_highlights {
-                if highlight.end <= text.len() {
-                    let format = TextFormat {
-                        font_id: font_id.clone(),
-                        color: highlight.color,
-                        italics: highlight.italic,
-                        underline: egui::Stroke::NONE,
-                        strikethrough: egui::Stroke::NONE,
-                        ..Default::default()
-                    };
-                    layout_job.append(&text[highlight.start..highlight.end], 0.0, format);
+            let mut pos = 0usize;
+            let mut push = |s: &str, color: Color32, italic: bool, job: &mut egui::text::LayoutJob| {
+                if s.is_empty() { return; }
+                job.append(s, 0.0, TextFormat {
+                    font_id: font_id.clone(), color,
+                    italics: italic,
+                    underline: egui::Stroke::NONE,
+                    strikethrough: egui::Stroke::NONE,
+                    ..Default::default()
+                });
+            };
+            for h in &ranges {
+                if h.start >= text.len() { break; }
+                let end = h.end.min(text.len());
+                let start = h.start.min(end);
+                if start > pos {
+                    // gap — default color (safe on char boundaries)
+                    let mut gs = start.min(text.len());
+                    // snap to char boundary
+                    while gs > pos && !text.is_char_boundary(gs) { gs -= 1; }
+                    if gs > pos {
+                        push(&text[pos..gs], default_color, false, &mut layout_job);
+                        pos = gs;
+                    } else { pos = start; }
+                    if pos >= end { continue; }
+                }
+                if end > pos && text.is_char_boundary(pos) && text.is_char_boundary(end) {
+                    push(&text[pos..end], h.color, h.italic, &mut layout_job);
+                    pos = end;
                 }
             }
-            
+            if pos < text.len() {
+                push(&text[pos..], default_color, false, &mut layout_job);
+            }
+            if text.is_empty() {
+                push(" ", default_color, false, &mut layout_job);
+            }
+            layout_job.wrap.max_width = wrap_width;
             ui.fonts(|f| f.layout_job(layout_job))
         };
         
@@ -485,8 +510,8 @@ impl CodeEditor {
         }
         
         // Update cursor position
-        if let Some(cursor_pos) = response.cursor_pos {
-            self.cursor_position = cursor_pos;
+        if let Some(cp) = response.cursor_pos {
+            self.cursor_pos = cp;
         }
     }
     
@@ -495,28 +520,20 @@ impl CodeEditor {
         if !response.has_focus() {
             return;
         }
-        
+
         let input = ui.input(|i| i.clone());
-        
-        // Ctrl+S - Save
-        if input.key_pressed(egui::Key::S) && input.modifiers.ctrl {
-            ui.send_event(crate::core::Command::SaveFile(
-                std::path::PathBuf::new(),
-                self.content.clone(),
-            ));
-        }
-        
-        // Tab - Insert spaces
+
+        // Tab - Insert spaces (Ctrl+S handled at app level)
         if input.key_pressed(egui::Key::Tab) {
             let indent = " ".repeat(self.config.tab_size);
-            self.content.insert_str(self.cursor_position, &indent);
-            self.cursor_position += self.config.tab_size;
+            self.content.insert_str(self.cursor_pos.min(self.content.len()), &indent);
+            self.cursor_pos += self.config.tab_size;
         }
     }
     
     /// Get current cursor line and column
     pub fn get_cursor_position(&self) -> (usize, usize) {
-        let prefix = &self.content[..self.cursor_position.min(self.content.len())];
+        let prefix = &self.content[..self.cursor_pos.min(self.content.len())];
         let line = prefix.lines().count();
         let col = prefix.lines().last().map(|l| l.len()).unwrap_or(0);
         (line, col)
@@ -524,16 +541,16 @@ impl CodeEditor {
     
     /// Insert text at cursor
     pub fn insert_text(&mut self, text: &str) {
-        self.content.insert_str(self.cursor_position, text);
-        self.cursor_position += text.len();
+        self.content.insert_str(self.cursor_pos, text);
+        self.cursor_pos += text.len();
         self.content_version += 1;
     }
     
     /// Delete character before cursor
     pub fn backspace(&mut self) {
-        if self.cursor_position > 0 {
-            self.cursor_position -= 1;
-            self.content.remove(self.cursor_position);
+        if self.cursor_pos > 0 {
+            self.cursor_pos -= 1;
+            self.content.remove(self.cursor_pos);
             self.content_version += 1;
         }
     }

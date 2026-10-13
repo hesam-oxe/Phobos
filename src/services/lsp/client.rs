@@ -1,6 +1,4 @@
-//! Phobos IDE - LSP Client Service
-//! Generic Language Server Protocol client implementation
-
+//! Phobos IDE - LSP Client Service (real JSON-RPC over stdio)
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -8,22 +6,15 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 use log::{info, warn, error, debug};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
-use tokio::sync::{Mutex, mpsc};
+use tokio::process::{Child, ChildStdin, Command};
+use tokio::sync::{Mutex, oneshot};
 use lsp_types::*;
 use serde_json::{json, Value};
+use url::Url;
 
-/// LSP Client state machine
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LspState {
-    NotStarted,
-    Starting,
-    Initialized,
-    Ready,
-    Error,
-}
+pub enum LspState { NotStarted, Starting, Initialized, Ready, Error }
 
-/// Configuration for an LSP server
 #[derive(Debug, Clone)]
 pub struct LspServerConfig {
     pub language_id: String,
@@ -33,496 +24,329 @@ pub struct LspServerConfig {
 }
 
 impl LspServerConfig {
-    /// Get default LSP server configurations
     pub fn defaults() -> Vec<Self> {
         vec![
-            Self {
-                language_id: "rust".to_string(),
-                command: "rust-analyzer".to_string(),
-                args: vec![],
-                file_extensions: vec!["rs".to_string()],
-            },
-            Self {
-                language_id: "python".to_string(),
-                command: "pylsp".to_string(),
-                args: vec![],
-                file_extensions: vec!["py".to_string()],
-            },
-            Self {
-                language_id: "typescript".to_string(),
-                command: "typescript-language-server".to_string(),
-                args: vec!["--stdio".to_string()],
-                file_extensions: vec!["ts".to_string(), "tsx".to_string()],
-            },
-            Self {
-                language_id: "javascript".to_string(),
-                command: "typescript-language-server".to_string(),
-                args: vec!["--stdio".to_string()],
-                file_extensions: vec!["js".to_string(), "jsx".to_string()],
-            },
-            Self {
-                language_id: "go".to_string(),
-                command: "gopls".to_string(),
-                args: vec![],
-                file_extensions: vec!["go".to_string()],
-            },
-            Self {
-                language_id: "java".to_string(),
-                command: "jdtls".to_string(),
-                args: vec![],
-                file_extensions: vec!["java".to_string()],
-            },
+            Self { language_id: "rust".into(), command: "rust-analyzer".into(), args: vec![], file_extensions: vec!["rs".into()] },
+            Self { language_id: "python".into(), command: "pylsp".into(), args: vec![], file_extensions: vec!["py".into()] },
+            Self { language_id: "typescript".into(), command: "typescript-language-server".into(), args: vec!["--stdio".into()], file_extensions: vec!["ts".into(),"tsx".into()] },
+            Self { language_id: "javascript".into(), command: "typescript-language-server".into(), args: vec!["--stdio".into()], file_extensions: vec!["js".into(),"jsx".into()] },
+            Self { language_id: "go".into(), command: "gopls".into(), args: vec![], file_extensions: vec!["go".into()] },
+            Self { language_id: "java".into(), command: "jdtls".into(), args: vec![], file_extensions: vec!["java".into()] },
+            Self { language_id: "c".into(), command: "clangd".into(), args: vec![], file_extensions: vec!["c".into(),"h".into()] },
+            Self { language_id: "cpp".into(), command: "clangd".into(), args: vec![], file_extensions: vec!["cpp".into(),"hpp".into()] },
         ]
     }
-    
-    /// Find config for a given file extension
     pub fn for_extension(ext: &str) -> Option<Self> {
         Self::defaults().into_iter().find(|c| c.file_extensions.iter().any(|e| e == ext))
     }
-    
-    /// Find config for a language ID
-    pub fn for_language(language_id: &str) -> Option<Self> {
-        Self::defaults().into_iter().find(|c| c.language_id == language_id)
+    pub fn for_language(lid: &str) -> Option<Self> {
+        Self::defaults().into_iter().find(|c| c.language_id == lid)
     }
 }
 
-/// Document version tracking
 #[derive(Debug, Clone)]
-struct DocumentInfo {
-    uri: DocumentUri,
-    version: i32,
-    content: String,
-}
+struct DocumentInfo { uri: Url, version: i32, content: String }
 
-/// Main LSP Client
+type PendingMap = Arc<Mutex<HashMap<i32, oneshot::Sender<Value>>>>;
+
 pub struct LspClient {
     config: LspServerConfig,
     state: LspState,
     process: Option<Arc<Mutex<Child>>>,
+    stdin: Option<Arc<Mutex<ChildStdin>>>,
+    pending: PendingMap,
     document_versions: HashMap<String, DocumentInfo>,
-    root_uri: Option<DocumentUri>,
+    root_uri: Option<Url>,
     capabilities: Option<ServerCapabilities>,
     request_id: i32,
+    diagnostics_tx: Option<tokio::sync::mpsc::Sender<(String, Vec<lsp_types::Diagnostic>)>>,
 }
 
 impl LspClient {
-    /// Create a new LSP client with the given configuration
     pub fn new(config: LspServerConfig) -> Self {
-        Self {
-            config,
-            state: LspState::NotStarted,
-            process: None,
-            document_versions: HashMap::new(),
-            root_uri: None,
-            capabilities: None,
-            request_id: 0,
-        }
+        Self { config, state: LspState::NotStarted, process: None, stdin: None,
+            pending: Arc::new(Mutex::new(HashMap::new())),
+            document_versions: HashMap::new(), root_uri: None, capabilities: None,
+            request_id: 0, diagnostics_tx: None }
     }
-    
-    /// Initialize and start the language server process
+
+    pub fn set_diagnostics_channel(&mut self, tx: tokio::sync::mpsc::Sender<(String, Vec<lsp_types::Diagnostic>)>) {
+        self.diagnostics_tx = Some(tx);
+    }
+
     pub async fn initialize(&mut self, workspace_root: PathBuf) -> Result<()> {
-        if self.state != LspState::NotStarted {
-            bail!("LSP client already initialized");
-        }
-        
+        if self.state != LspState::NotStarted { bail!("LSP already initialized"); }
         self.state = LspState::Starting;
-        
-        // Spawn the language server process
+        if which::which(&self.config.command).is_err() {
+            self.state = LspState::Error;
+            bail!("LSP server not found in PATH: {}", self.config.command);
+        }
         let mut child = Command::new(&self.config.command)
             .args(&self.config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context(format!("Failed to spawn LSP server: {}", self.config.command))?;
-        
-        let stdin = child.stdin.take()
-            .context("Failed to open stdin for LSP server")?;
-        let stdout = child.stdout.take()
-            .context("Failed to open stdout for LSP server")?;
-        let stderr = child.stderr.take()
-            .context("Failed to open stderr for LSP server")?;
-        
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn().context(format!("Failed to spawn {}", self.config.command))?;
+        let stdin = child.stdin.take().context("stdin")?;
+        let stdout = child.stdout.take().context("stdout")?;
+        let stderr = child.stderr.take().context("stderr")?;
         let child_arc = Arc::new(Mutex::new(child));
-        self.process = Some(child_arc.clone());
-        
-        // Set root URI
-        let root_path = workspace_root.canonicalize()
-            .unwrap_or(workspace_root);
-        self.root_uri = Some(DocumentUri::from_file_path(&root_path)
-            .map_err(|_| anyhow::anyhow!("Invalid workspace path"))?);
-        
-        // Send initialize request
+        self.process = Some(child_arc);
+        self.stdin = Some(Arc::new(Mutex::new(stdin)));
+
+        let root_path = workspace_root.canonicalize().unwrap_or(workspace_root);
+        let root_uri = Url::from_file_path(&root_path).map_err(|_| anyhow::anyhow!("bad workspace path"))?;
+        self.root_uri = Some(root_uri.clone());
+
+        // spawn stdout reader
+        let pending = self.pending.clone();
+        let diag_tx = self.diagnostics_tx.clone();
+        tokio::spawn(async move {
+            Self::reader_loop(stdout, pending, diag_tx).await;
+        });
+        // log stderr
+        tokio::spawn(async move {
+            let mut r = BufReader::new(stderr);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match r.read_line(&mut line).await {
+                    Ok(0) => break,
+                    Ok(_) => warn!("LSP stderr: {}", line.trim()),
+                    Err(e) => { error!("LSP stderr read: {}", e); break; }
+                }
+            }
+        });
+
         let init_params = InitializeParams {
             process_id: Some(std::process::id()),
-            root_uri: self.root_uri.clone(),
             root_path: None,
+            root_uri: Some(root_uri.clone()),
             initialization_options: None,
             capabilities: ClientCapabilities {
                 text_document: Some(TextDocumentClientCapabilities {
                     synchronization: Some(TextDocumentSynchronizationClientCapabilities {
-                        dynamic_registration: Some(false),
-                        will_save: Some(false),
-                        will_save_wait_until: Some(false),
-                        did_save: Some(true),
-                    }),
+                        dynamic_registration: Some(false), will_save: Some(false),
+                        will_save_wait_until: Some(false), did_save: Some(true) }),
                     completion: Some(CompletionClientCapabilities {
                         dynamic_registration: Some(false),
-                        completion_item: Some(CompletionItemCapability {
-                            snippet_support: Some(true),
-                            ..Default::default()
-                        }),
-                        completion_item_kind: Some(CompletionItemKindCapability {
-                            value_set: Some(vec![
-                                CompletionItemKind::TEXT,
-                                CompletionItemKind::METHOD,
-                                CompletionItemKind::FUNCTION,
-                                CompletionItemKind::CONSTRUCTOR,
-                                CompletionItemKind::FIELD,
-                                CompletionItemKind::VARIABLE,
-                                CompletionItemKind::CLASS,
-                                CompletionItemKind::INTERFACE,
-                                CompletionItemKind::MODULE,
-                                CompletionItemKind::PROPERTY,
-                                CompletionItemKind::UNIT,
-                                CompletionItemKind::VALUE,
-                                CompletionItemKind::ENUM,
-                                CompletionItemKind::KEYWORD,
-                                CompletionItemKind::SNIPPET,
-                            ]),
-                        }),
-                        ..Default::default()
-                    }),
+                        completion_item: Some(CompletionItemCapability { snippet_support: Some(true), ..Default::default() }),
+                        ..Default::default() }),
                     hover: Some(HoverClientCapabilities {
                         dynamic_registration: Some(false),
-                        content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
-                    }),
-                    diagnostics: Some(DiagnosticsClientCapabilities {
-                        dynamic_registration: Some(false),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-                workspace: Some(WorkspaceClientCapabilities {
-                    workspace_folders: Some(true),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
+                        content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]) }),
+                    publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
+                        related_information: Some(true), version_support: Some(false), ..Default::default() }),
+                    ..Default::default() }),
+                workspace: Some(WorkspaceClientCapabilities { workspace_folders: Some(true), ..Default::default() }),
+                ..Default::default() },
             trace: Some(TraceValue::Off),
-            workspace_folders: Some(vec![WorkspaceFolder {
-                uri: self.root_uri.clone().unwrap(),
-                name: root_path.display().to_string(),
-            }]),
-            client_info: Some(ClientInfo {
-                name: "Phobos IDE".to_string(),
-                version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            }),
+            workspace_folders: Some(vec![WorkspaceFolder { uri: root_uri.clone(), name: root_path.display().to_string() }]),
+            client_info: Some(ClientInfo { name: "Phobos IDE".into(), version: Some(env!("CARGO_PKG_VERSION").into()) }),
             locale: None,
-            root_directory: None,
         };
-        
-        let response = self.send_request::<InitializeParams, InitializeResult>(
-            "initialize",
-            init_params,
-            &stdin,
-            &stdout,
-        ).await?;
-        
-        self.capabilities = Some(response.capabilities);
-        
-        // Send initialized notification
-        self.send_notification("initialized", json!({}))
-            .await
-            .context("Failed to send initialized notification")?;
-        
+        let resp: InitializeResult = self.send_request("initialize", init_params).await?;
+        self.capabilities = Some(resp.capabilities);
+        self.send_notification("initialized", json!({})).await?;
         self.state = LspState::Ready;
-        info!("LSP server '{}' initialized successfully", self.config.language_id);
-        
-        // Start reading stdout in background
-        tokio::spawn(Self::read_stdout(stdout, stderr));
-        
+        info!("LSP '{}' ready", self.config.language_id);
         Ok(())
     }
-    
-    /// Open a document in the language server
-    pub async fn did_open(&mut self, uri: &str, content: &str, language_id: &str) -> Result<()> {
-        if self.state != LspState::Ready {
-            bail!("LSP client not ready");
+
+    fn next_id(&mut self) -> i32 { self.request_id += 1; self.request_id }
+
+    async fn write_msg(&self, msg: &Value) -> Result<()> {
+        let body = serde_json::to_string(msg)?;
+        let header = format!("Content-Length: {}\r\n\r\n", body.len());
+        let stdin = self.stdin.as_ref().context("no stdin")?.clone();
+        let mut g = stdin.lock().await;
+        g.write_all(header.as_bytes()).await?;
+        g.write_all(body.as_bytes()).await?;
+        g.flush().await?;
+        Ok(())
+    }
+
+    pub async fn send_notification(&self, method: &str, params: Value) -> Result<()> {
+        let msg = json!({"jsonrpc":"2.0","method":method,"params":params});
+        debug!("LSP notify {}", method);
+        self.write_msg(&msg).await
+    }
+
+    pub async fn send_request<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+        &mut self, method: &str, params: P,
+    ) -> Result<R> {
+        let id = self.next_id();
+        let msg = json!({"jsonrpc":"2.0","id":id,"method":method,"params":params});
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().await.insert(id, tx);
+        self.write_msg(&msg).await?;
+        let val = tokio::time::timeout(std::time::Duration::from_secs(10), rx)
+            .await.context("LSP request timeout")?
+            .context("LSP channel closed")?;
+        if let Some(err) = val.get("error") {
+            bail!("LSP error: {}", err);
         }
-        
-        let doc_uri = DocumentUri::parse(uri)?;
-        let version = self.document_versions.get(uri).map(|d| d.version + 1).unwrap_or(1);
-        
+        let result = val.get("result").cloned().unwrap_or(Value::Null);
+        Ok(serde_json::from_value(result)?)
+    }
+
+    async fn send_request_value(&mut self, method: &str, params: Value) -> Result<Value> {
+        let id = self.next_id();
+        let msg = json!({"jsonrpc":"2.0","id":id,"method":method,"params":params});
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().await.insert(id, tx);
+        self.write_msg(&msg).await?;
+        let val = tokio::time::timeout(std::time::Duration::from_secs(10), rx)
+            .await.context("timeout")?.context("closed")?;
+        if let Some(err) = val.get("error") { bail!("LSP error: {}", err); }
+        Ok(val.get("result").cloned().unwrap_or(Value::Null))
+    }
+
+    async fn reader_loop(
+        stdout: tokio::process::ChildStdout,
+        pending: PendingMap,
+        diag_tx: Option<tokio::sync::mpsc::Sender<(String, Vec<lsp_types::Diagnostic>)>>,
+    ) {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            // read headers
+            let mut content_length: Option<usize> = None;
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line).await {
+                    Ok(0) => return,
+                    Ok(_) => {},
+                    Err(_) => return,
+                }
+                let t = line.trim();
+                if t.is_empty() { break; }
+                if let Some(v) = t.strip_prefix("Content-Length:") {
+                    content_length = v.trim().parse().ok();
+                }
+            }
+            let len = match content_length { Some(l) => l, None => continue };
+            let mut buf = vec![0u8; len];
+            let mut read = 0;
+            while read < len {
+                use tokio::io::AsyncReadExt;
+                match reader.read(&mut buf[read..]).await {
+                    Ok(0) => return,
+                    Ok(n) => read += n,
+                    Err(_) => return,
+                }
+            }
+            let msg: Value = match serde_json::from_slice(&buf) {
+                Ok(v) => v, Err(_) => continue,
+            };
+            if let Some(id) = msg.get("id").and_then(|v| v.as_i64()) {
+                let mut p = pending.lock().await;
+                if let Some(tx) = p.remove(&(id as i32)) { let _ = tx.send(msg); }
+            } else if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
+                if method == "textDocument/publishDiagnostics" {
+                    if let Some(tx) = &diag_tx {
+                        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+                        let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let diags: Vec<lsp_types::Diagnostic> = params.get("diagnostics")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let _ = tx.send((uri, diags)).await;
+                    }
+                }
+            }
+        }
+    }
+
+    fn uri_for(&self, path: &str) -> Result<Url> {
+        if path.starts_with("file://") { Ok(Url::parse(path)?) }
+        else {
+            let p = std::path::Path::new(path);
+            Url::from_file_path(p).map_err(|_| anyhow::anyhow!("bad path"))
+        }
+    }
+
+    pub async fn did_open(&mut self, path: &str, content: &str, language_id: &str) -> Result<()> {
+        if self.state != LspState::Ready { bail!("not ready"); }
+        let uri = self.uri_for(path)?;
+        let key = uri.to_string();
+        let ver = self.document_versions.get(&key).map(|d| d.version + 1).unwrap_or(1);
         let params = DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: doc_uri.clone(),
-                language_id: language_id.to_string(),
-                version,
-                text: content.to_string(),
-            },
+            text_document: TextDocumentItem { uri: uri.clone(), language_id: language_id.into(), version: ver, text: content.into() },
         };
-        
-        self.document_versions.insert(uri.to_string(), DocumentInfo {
-            uri: doc_uri,
-            version,
-            content: content.to_string(),
-        });
-        
-        self.send_notification("textDocument/didOpen", json!(params)).await
+        self.document_versions.insert(key, DocumentInfo { uri, version: ver, content: content.into() });
+        self.send_notification("textDocument/didOpen", serde_json::to_value(params)?).await
     }
-    
-    /// Notify document changes
-    pub async fn did_change(&mut self, uri: &str, content: &str) -> Result<()> {
-        if self.state != LspState::Ready {
-            bail!("LSP client not ready");
-        }
-        
-        let doc_info = self.document_versions.get_mut(uri)
-            .context("Document not opened in LSP")?;
-        
-        doc_info.version += 1;
-        doc_info.content = content.to_string();
-        
+
+    pub async fn did_change(&mut self, path: &str, content: &str) -> Result<()> {
+        if self.state != LspState::Ready { bail!("not ready"); }
+        let uri = self.uri_for(path)?;
+        let key = uri.to_string();
+        let ver = self.document_versions.get(&key).map(|d| d.version + 1).unwrap_or(1);
         let params = DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier {
-                uri: doc_info.uri.clone(),
-                version: doc_info.version,
-            },
-            content_changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: content.to_string(),
-            }],
+            text_document: VersionedTextDocumentIdentifier { uri: uri.clone(), version: ver },
+            content_changes: vec![TextDocumentContentChangeEvent { range: None, range_length: None, text: content.into() }],
         };
-        
-        self.send_notification("textDocument/didChange", json!(params)).await
+        if let Some(d) = self.document_versions.get_mut(&key) { d.version = ver; d.content = content.into(); }
+        else { self.document_versions.insert(key, DocumentInfo { uri, version: ver, content: content.into() }); }
+        self.send_notification("textDocument/didChange", serde_json::to_value(params)?).await
     }
-    
-    /// Request completions
-    pub async fn completion(&self, uri: &str, line: u32, column: u32) -> Result<Vec<CompletionItem>> {
-        if self.state != LspState::Ready {
-            bail!("LSP client not ready");
-        }
-        
-        let doc_info = self.document_versions.get(uri)
-            .context("Document not opened in LSP")?;
-        
+
+    pub async fn completion(&mut self, path: &str, line: u32, col: u32) -> Result<Vec<CompletionItem>> {
+        if self.state != LspState::Ready { bail!("not ready"); }
+        let uri = self.uri_for(path)?;
         let params = CompletionParams {
             text_document_position: TextDocumentPositionParams {
-                uri: doc_info.uri.clone(),
-                position: Position { line, character: column },
-            },
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
-            context: None,
+                text_document: TextDocumentIdentifier { uri }, position: Position { line, character: col } },
+            work_done_progress_params: Default::default(), partial_result_params: Default::default(), context: None,
         };
-        
-        let response = self.send_request_simple("textDocument/completion", json!(params)).await?;
-        
-        // Parse response
-        match response {
-            Value::Array(items) => {
-                let completions: Result<Vec<CompletionItem>> = items
-                    .into_iter()
-                    .map(|v| serde_json::from_value(v).context("Failed to parse completion item"))
-                    .collect();
-                completions
-            }
-            Value::Object(obj) => {
-                // Response might be wrapped in { items: [...], isIncomplete: bool }
-                obj.get("items")
-                    .and_then(|v| v.as_array())
-                    .map(|items| {
-                        items.iter()
-                            .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                            .collect()
-                    })
-                    .context("Invalid completion response format")
-            }
-            _ => bail!("Unexpected completion response format"),
-        }
+        let v = self.send_request_value("textDocument/completion", serde_json::to_value(params)?).await?;
+        if v.is_null() { return Ok(vec![]); }
+        if let Some(arr) = v.as_array() {
+            Ok(arr.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).collect())
+        } else if let Some(items) = v.get("items") {
+            Ok(serde_json::from_value(items.clone()).unwrap_or_default())
+        } else { Ok(vec![]) }
     }
-    
-    /// Request hover information
-    pub async fn hover(&self, uri: &str, line: u32, column: u32) -> Result<Option<Hover>> {
-        if self.state != LspState::Ready {
-            bail!("LSP client not ready");
-        }
-        
-        let doc_info = self.document_versions.get(uri)
-            .context("Document not opened in LSP")?;
-        
+
+    pub async fn hover(&mut self, path: &str, line: u32, col: u32) -> Result<Option<Hover>> {
+        if self.state != LspState::Ready { bail!("not ready"); }
+        let uri = self.uri_for(path)?;
         let params = HoverParams {
             text_document_position_params: TextDocumentPositionParams {
-                uri: doc_info.uri.clone(),
-                position: Position { line, character: column },
-            },
+                text_document: TextDocumentIdentifier { uri }, position: Position { line, character: col } },
             work_done_progress_params: Default::default(),
         };
-        
-        let response = self.send_request_simple("textDocument/hover", json!(params)).await?;
-        
-        if response.is_null() {
-            return Ok(None);
-        }
-        
-        serde_json::from_value(response)
-            .context("Failed to parse hover response")
-            .map(Some)
+        let v = self.send_request_value("textDocument/hover", serde_json::to_value(params)?).await?;
+        if v.is_null() { return Ok(None); }
+        Ok(serde_json::from_value(v).ok())
     }
-    
-    /// Close a document
-    pub async fn did_close(&mut self, uri: &str) -> Result<()> {
-        if self.state != LspState::Ready {
-            bail!("LSP client not ready");
-        }
-        
-        let doc_info = self.document_versions.remove(uri)
-            .context("Document not opened in LSP")?;
-        
-        let params = DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier {
-                uri: doc_info.uri,
-            },
-        };
-        
-        self.send_notification("textDocument/didClose", json!(params)).await
+
+    pub async fn did_close(&mut self, path: &str) -> Result<()> {
+        let uri = self.uri_for(path)?;
+        let key = uri.to_string();
+        self.document_versions.remove(&key);
+        let params = DidCloseTextDocumentParams { text_document: TextDocumentIdentifier { uri } };
+        self.send_notification("textDocument/didClose", serde_json::to_value(params)?).await
     }
-    
-    /// Shutdown the LSP server
+
     pub async fn shutdown(&mut self) -> Result<()> {
-        if let Some(process) = &self.process {
-            self.send_notification("shutdown", json!({})).await?;
-            self.send_notification("exit", json!({})).await?;
-            
-            let mut proc = process.lock().await;
-            proc.kill().await.ok();
+        if self.state == LspState::Ready {
+            let _ = self.send_request_value("shutdown", Value::Null).await;
+            let _ = self.send_notification("exit", Value::Null).await;
         }
-        
+        if let Some(p) = &self.process {
+            let mut g = p.lock().await;
+            // kill is async via start_kill
+            let _ = g.start_kill();
+        }
         self.state = LspState::NotStarted;
         Ok(())
     }
-    
-    /// Get current state
-    pub fn state(&self) -> LspState {
-        self.state
-    }
-    
-    /// Get server capabilities
-    pub fn capabilities(&self) -> Option<&ServerCapabilities> {
-        self.capabilities.as_ref()
-    }
-    
-    // === Internal helper methods ===
-    
-    fn next_request_id(&mut self) -> i32 {
-        self.request_id += 1;
-        self.request_id
-    }
-    
-    async fn send_request<P, R>(
-        &mut self,
-        method: &str,
-        params: P,
-        _stdin: &tokio::net::unix::pipe::Sender,
-        _stdout: &tokio::net::unix::pipe::Receiver,
-    ) -> Result<R>
-    where
-        P: serde::Serialize,
-        R: serde::de::DeserializeOwned,
-    {
-        // Simplified request sending - actual implementation would use proper JSON-RPC
-        // This is a placeholder that demonstrates the architecture
-        let id = self.next_request_id();
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        });
-        
-        debug!("Sending LSP request: {} {:?}", method, request);
-        
-        // In a full implementation, we would write to stdin and read from stdout
-        // For now, return a placeholder
-        bail!("Full LSP request/response implementation pending - architecture demonstrated");
-    }
-    
-    async fn send_notification(&self, method: &str, params: Value) -> Result<()> {
-        let notification = json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        });
-        
-        debug!("Sending LSP notification: {} {:?}", method, notification);
-        
-        // In full implementation, write to stdin with Content-Length header
-        Ok(())
-    }
-    
-    async fn send_request_simple(&self, method: &str, params: Value) -> Result<Value> {
-        // Placeholder for simple request sending
-        debug!("LSP request (placeholder): {}", method);
-        Ok(Value::Null)
-    }
-    
-    async fn read_stdout(
-        stdout: impl tokio::io::AsyncRead + Unpin + Send + 'static,
-        stderr: impl tokio::io::AsyncRead + Unpin + Send + 'static,
-    ) {
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        
-        loop {
-            line.clear();
-            match reader.read_line(&mut line).await {
-                Ok(0) => break, // EOF
-                Ok(_) => {
-                    debug!("LSP stdout: {}", line.trim());
-                    // Parse JSON-RPC messages and handle notifications
-                    // Especially publishDiagnostics
-                }
-                Err(e) => {
-                    error!("Error reading LSP stdout: {}", e);
-                    break;
-                }
-            }
-        }
-        
-        // Also read stderr for errors
-        let mut err_reader = BufReader::new(stderr);
-        let mut err_line = String::new();
-        
-        tokio::spawn(async move {
-            loop {
-                err_line.clear();
-                match err_reader.read_line(&mut err_line).await {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        warn!("LSP stderr: {}", err_line.trim());
-                    }
-                    Err(e) => {
-                        error!("Error reading LSP stderr: {}", e);
-                        break;
-                    }
-                }
-            }
-        });
-    }
+
+    pub fn state(&self) -> LspState { self.state }
+    pub fn capabilities(&self) -> Option<&ServerCapabilities> { self.capabilities.as_ref() }
 }
 
-/// Helper function to create LSP client for a language
-pub async fn create_lsp_client(
-    language_id: &str,
-    workspace_root: PathBuf,
-) -> Result<LspClient> {
+pub async fn create_lsp_client(language_id: &str, workspace_root: PathBuf) -> Result<LspClient> {
     let config = LspServerConfig::for_language(language_id)
-        .context(format!("No LSP config found for language: {}", language_id))?;
-    
+        .context(format!("No LSP config for {}", language_id))?;
     let mut client = LspClient::new(config);
     client.initialize(workspace_root).await?;
-    
     Ok(client)
 }

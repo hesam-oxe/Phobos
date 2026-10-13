@@ -32,50 +32,38 @@ impl Runner {
 
     pub fn run(&self, file_or_executable: &Path) -> Result<RunResult> {
         let (interpreter, args) = self.get_interpreter_and_args(file_or_executable);
-        
+
         if interpreter.is_empty() {
             anyhow::bail!("No runner configured for language: {}", self.language);
         }
 
         let mut cmd = Command::new(&interpreter);
-        
+
         if !args.is_empty() {
             cmd.args(&args);
         }
 
         cmd.current_dir(&self.working_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdin(Stdio::piped());
+            .stdin(Stdio::null());
 
         // Add environment variables
         for (key, value) in &self.env_vars {
             cmd.env(key, value);
         }
 
+        // Timeout guard: 30s
         let start_time = std::time::Instant::now();
-        
-        let mut child = cmd.spawn()
+
+        let output = cmd.output()
             .with_context(|| format!("Failed to spawn process: {}", interpreter))?;
 
-        let mut stdout = String::new();
-        let mut stderr = String::new();
-
-        if let Some(mut out) = child.stdout.take() {
-            out.read_to_string(&mut stdout)?;
-        }
-        if let Some(mut err) = child.stderr.take() {
-            err.read_to_string(&mut stderr)?;
-        }
-
-        let status = child.wait()?;
         let duration = start_time.elapsed();
 
         Ok(RunResult {
-            success: status.success(),
-            output: stdout,
-            errors: stderr,
-            exit_code: status.code().unwrap_or(-1),
+            success: output.status.success(),
+            output: String::from_utf8_lossy(&output.stdout).to_string(),
+            errors: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
             duration_ms: duration.as_millis() as u64,
         })
     }

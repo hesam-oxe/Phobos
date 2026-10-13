@@ -1,9 +1,8 @@
 // Phobos IDE - Compiler Module
 // Multi-language compilation and build system
 
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::path::{Path, PathBuf};
-use std::io::{Read, Write};
 use anyhow::{Result, Context};
 
 #[derive(Debug, Clone)]
@@ -159,34 +158,48 @@ impl Compiler {
             }
         }
 
-        // Execute compilation
+        // Execute compilation (no deadlock: use output() which drains pipes concurrently)
         let start_time = std::time::Instant::now();
-        
-        let mut child = Command::new(command)
+
+        // Cargo workspace awareness: prefer `cargo build` when manifest exists
+        if self.config.language == "rust" {
+            if let Some(manifest) = find_cargo_manifest(source_file) {
+                let out = Command::new("cargo")
+                    .arg("build")
+                    .arg("--manifest-path").arg(&manifest)
+                    .arg("--message-format").arg("short")
+                    .current_dir(manifest.parent().unwrap_or(std::path::Path::new(".")))
+                    .output();
+                match out {
+                    Ok(o) => {
+                        let duration = start_time.elapsed();
+                        let success = o.status.success();
+                        return Ok(CompilationResult {
+                            success,
+                            output: String::from_utf8_lossy(&o.stdout).to_string(),
+                            errors: String::from_utf8_lossy(&o.stderr).to_string(),
+                            executable_path: if success {
+                                Some(self.config.output_dir.join("output"))
+                            } else { None },
+                            duration_ms: duration.as_millis() as u64,
+                        });
+                    }
+                    Err(_) => {} // fall through to rustc single-file
+                }
+            }
+        }
+
+        let output = Command::new(command)
             .args(&args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .output()
             .with_context(|| format!("Failed to spawn compiler: {}", command))?;
 
-        let mut stdout = String::new();
-        let mut stderr = String::new();
-
-        if let Some(mut out) = child.stdout.take() {
-            out.read_to_string(&mut stdout)?;
-        }
-        if let Some(mut err) = child.stderr.take() {
-            err.read_to_string(&mut stderr)?;
-        }
-
-        let status = child.wait()?;
         let duration = start_time.elapsed();
-
         Ok(CompilationResult {
-            success: status.success(),
-            output: stdout,
-            errors: stderr,
-            executable_path: if status.success() {
+            success: output.status.success(),
+            output: String::from_utf8_lossy(&output.stdout).to_string(),
+            errors: String::from_utf8_lossy(&output.stderr).to_string(),
+            executable_path: if output.status.success() {
                 Some(self.config.output_dir.join("output"))
             } else {
                 None
@@ -220,4 +233,20 @@ pub struct CompilerInfo {
     pub compiler_type: String,
     pub default_command: String,
     pub flags: Vec<String>,
+}
+
+fn find_cargo_manifest(start: &Path) -> Option<PathBuf> {
+    let mut dir = if start.is_file() {
+        start.parent().map(|p| p.to_path_buf())
+    } else {
+        Some(start.to_path_buf())
+    };
+    while let Some(d) = dir {
+        let m = d.join("Cargo.toml");
+        if m.exists() {
+            return Some(m);
+        }
+        dir = d.parent().map(|p| p.to_path_buf());
+    }
+    None
 }

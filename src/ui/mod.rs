@@ -6,3 +6,8 @@ pub mod theme;
 pub mod status_bar;
 pub mod welcome;
 pub mod zen_mode;
+pub mod ai_panel;
+pub mod build_panel;
+pub mod git_panel;
+pub mod debug_panel;
+pub mod pty_terminal;
