@@ -78,6 +78,9 @@ pub struct PhobosApp {
     lsp_hover: Option<String>,
     pending_completion: u64,
     pending_hover: u64,
+    plugin_search: String,
+    plugin_toml: String,
+    plugin_msg: Option<String>,
 }
 
 impl PhobosApp {
@@ -135,6 +138,9 @@ impl PhobosApp {
             lsp_hover: None,
             pending_completion: 0,
             pending_hover: 0,
+            plugin_search: String::new(),
+            plugin_toml: String::new(),
+            plugin_msg: None,
         };
         app.editor.config.show_line_numbers = config.show_line_numbers;
         app.editor.config.minimap_enabled = config.show_minimap;
@@ -702,18 +708,70 @@ impl eframe::App for PhobosApp {
             egui::Window::new("📟 Regs").show(ctx, |ui| { self.reg_viewer.show(ui); });
         }
         if self.show_plugins {
-            egui::Window::new("🔌 Plugins").show(ctx, |ui| {
-                ui.heading("Plugins");
-                let mut toggle: Option<String> = None;
-                for (id, p) in self.plugins.plugins.iter() {
+            egui::Window::new("🔌 Marketplace").resizable(true).default_size([560.0, 480.0])
+                .show(ctx, |ui| {
+                    ui.heading("🔌 Marketplace");
                     ui.horizontal(|ui| {
-                        ui.label(format!("{} {} v{} - {}", if p.enabled {"🟢"} else {"⚪"}, p.name, p.version, p.description));
-                        if ui.button("toggle").clicked() { toggle = Some(id.clone()); }
+                        ui.label("Search:");
+                        ui.text_edit_singleline(&mut self.plugin_search);
                     });
-                }
-                if let Some(id) = toggle { self.plugins.toggle(&id); }
-                if ui.button("Close").clicked() { self.show_plugins = false; }
-            });
+                    ui.separator();
+                    let items = self.plugins.search(&self.plugin_search.clone());
+                    let mut toggle: Option<(String, bool)> = None;
+                    let mut remove: Option<String> = None;
+                    egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                        for p in items {
+                            ui.horizontal(|ui| {
+                                ui.label(if p.enabled { "🟢" } else { "⚪" });
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(format!("{} v{}", p.name, p.version)).strong());
+                                    ui.label(egui::RichText::new(format!("{} — {}", p.id, p.description)).size(11.0));
+                                });
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    let installed = self.plugins.plugins.contains_key(&p.id);
+                                    if installed {
+                                        if ui.button(if p.enabled { "Disable" } else { "Enable" }).clicked() {
+                                            toggle = Some((p.id.clone(), !p.enabled));
+                                        }
+                                        if p.external && ui.button("🗑").clicked() {
+                                            remove = Some(p.id.clone());
+                                        }
+                                    } else {
+                                        ui.label(egui::RichText::new("catalog").size(10.0));
+                                    }
+                                });
+                            });
+                            ui.separator();
+                        }
+                    });
+                    if let Some((id, on)) = toggle {
+                        self.plugins.set_enabled(&id, on);
+                    }
+                    if let Some(id) = remove {
+                        self.plugins.remove_external(&id);
+                    }
+                    ui.separator();
+                    ui.collapsing("📥 Install from TOML", |ui| {
+                        ui.label("id/name/version/description/enabled");
+                        ui.text_edit_multiline(&mut self.plugin_toml);
+                        if ui.button("Install").clicked() {
+                            let name = format!("ext-{}", self.plugins.plugins.len());
+                            match self.plugins.install_str(&name, &self.plugin_toml.clone()) {
+                                Ok(id) => {
+                                    self.plugin_msg = Some(format!("✅ installed {}", id));
+                                    self.plugin_toml.clear();
+                                }
+                                Err(e) => {
+                                    self.plugin_msg = Some(format!("❌ {}", e));
+                                }
+                            }
+                        }
+                        if let Some(m) = &self.plugin_msg {
+                            ui.label(m.clone());
+                        }
+                    });
+                    if ui.button("Close").clicked() { self.show_plugins = false; }
+                });
         }
 
         if self.lsp_hover.is_some() {
@@ -795,5 +853,36 @@ fn render_completion_popup(
         if let Some(text) = completion.accept_completion() {
             editor.insert_text(&text);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suggestion_kind_mapping() {
+        let mk = |kind| CoreCompletionItem {
+            label: "x".into(),
+            kind,
+            detail: None,
+            documentation: None,
+            insert_text: None,
+        };
+        assert!(matches!(
+            lsp_to_suggestion(&mk(CoreKind::Function)).kind,
+            SuggestionKind::Function
+        ));
+        assert!(matches!(
+            lsp_to_suggestion(&mk(CoreKind::Class)).kind,
+            SuggestionKind::Type
+        ));
+        assert!(matches!(
+            lsp_to_suggestion(&mk(CoreKind::File)).kind,
+            SuggestionKind::Import
+        ));
+        let s = lsp_to_suggestion(&mk(CoreKind::Snippet));
+        assert_eq!(s.text, "x");
+        assert!((s.confidence - 0.85).abs() < f32::EPSILON);
     }
 }

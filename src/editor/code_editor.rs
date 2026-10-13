@@ -604,3 +604,42 @@ impl Default for CodeEditor {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lsp_pos_first_line() {
+        let mut e = CodeEditor::new();
+        e.content = "fn main() {}".into();
+        e.cursor_pos = 3;
+        assert_eq!(e.cursor_lsp_pos(), (0, 3));
+    }
+
+    #[test]
+    fn lsp_pos_second_line() {
+        let mut e = CodeEditor::new();
+        e.content = "ab\ncdef".into();
+        e.cursor_pos = 5; // after 'c'
+        assert_eq!(e.cursor_lsp_pos(), (1, 1));
+    }
+
+    #[test]
+    fn lsp_pos_after_trailing_newline() {
+        let mut e = CodeEditor::new();
+        e.content = "a\n".into();
+        e.cursor_pos = 2;
+        assert_eq!(e.cursor_lsp_pos(), (1, 0));
+    }
+
+    #[test]
+    fn jump_to_line_starts() {
+        let mut e = CodeEditor::new();
+        e.content = "aa\nbbb\nc".into();
+        e.jump_to_line(1);
+        assert_eq!(e.cursor_pos, 3);
+        e.jump_to_line(9);
+        assert_eq!(e.cursor_pos, e.content.len());
+    }
+}

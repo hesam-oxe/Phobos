@@ -303,3 +303,73 @@ fn hover_to_string(h: lsp_types::Hover) -> String {
         lsp_types::HoverContents::Markup(m) => m.value,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lsp_types::{
+        Diagnostic, DiagnosticSeverity, Hover, HoverContents, MarkedString, NumberOrString,
+        Position, Range,
+    };
+
+    fn pos(line: u32, ch: u32) -> Position {
+        Position { line, character: ch }
+    }
+
+    #[test]
+    fn diagnostic_conversion() {
+        let d = Diagnostic {
+            range: Range { start: pos(3, 5), end: pos(3, 9) },
+            severity: Some(DiagnosticSeverity::ERROR),
+            code: Some(NumberOrString::Number(42)),
+            code_description: None,
+            source: Some("rustc".into()),
+            message: "boom".into(),
+            related_information: None,
+            tags: None,
+            data: None,
+        };
+        let c = convert_diagnostic(d);
+        assert_eq!((c.line, c.column, c.end_line, c.end_column), (3, 5, 3, 9));
+        assert!(matches!(c.severity, CoreSeverity::Error));
+        assert_eq!(c.code.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn hover_scalars_and_markup() {
+        let h = Hover {
+            contents: HoverContents::Scalar(MarkedString::String("hi".into())),
+            range: None,
+        };
+        assert_eq!(hover_to_string(h), "hi");
+        let h = Hover {
+            contents: HoverContents::Array(vec![
+                MarkedString::String("a".into()),
+                MarkedString::LanguageString(lsp_types::LanguageString {
+                    language: "rust".into(),
+                    value: "b".into(),
+                }),
+            ]),
+            range: None,
+        };
+        assert_eq!(hover_to_string(h), "a\n---\nb");
+    }
+
+    #[test]
+    fn uri_file_path() {
+        assert_eq!(uri_to_path("file:///tmp/a.rs"), "/tmp/a.rs");
+        assert_eq!(uri_to_path("notauri"), "notauri");
+    }
+
+    #[test]
+    fn completion_falls_back_to_label() {
+        let c = lsp_types::CompletionItem {
+            label: "foo".into(),
+            insert_text: None,
+            ..Default::default()
+        };
+        let out = convert_completion(c);
+        assert_eq!(out.insert_text.as_deref(), Some("foo"));
+        assert!(matches!(out.kind, CoreKind::Text));
+    }
+}

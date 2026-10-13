@@ -194,6 +194,7 @@ impl Debugger {
     }
 
     pub fn get_state(&self) -> &DebugState { &self.state }
+    pub fn language(&self) -> &str { &self.language }
     pub fn get_breakpoints(&self) -> &[Breakpoint] { &self.breakpoints }
     pub fn get_output(&self) -> &str { &self.output_buffer }
 }

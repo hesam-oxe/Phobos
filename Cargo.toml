@@ -53,6 +53,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
+# HTTP (blocking, used from worker threads for AI providers)
+ureq = { version = "2", features = ["json"] }
+
 # Error Handling
 anyhow = "1"
 thiserror = "1"
