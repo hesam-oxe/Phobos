@@ -16,6 +16,7 @@
 - AI واقعی: `ai/provider.rs` (OpenAI-compatible via ureq، key فقط در حافظه) + تب Remote با endpoint/model ذخیره‌شونده
 - DAP کامل: `build/dap.rs` (framing، launch/setBreakpoints/continue/next/stepIn، زنجیره stopped→threads→stack→scopes→vars) + پنل دیباگ (threads/stack/vars/output، فوروارد برک‌پوینت‌ها)
 - یونیت‌تست: dap/lsp/code_editor/plugins/app/provider (روی ماشین کاربر اجرا می‌شوند؛ اینجا فقط کامپایل‌چک به‌خاطر killer محیط)
+- زیرساخت دیدن اپ: `.github/workflows/shot.yml` (بیلد + اسکرین‌شات Xvfb + آرتیفکت) — چون codegen کامل روی این باکس SIGKILL می‌خورد (حتی `syn` با `-j1`) و هر تلاش سرور را ریستارت می‌کند؛ دیگر اینجا بیلد کامل نزن.
 `cargo check -j 4` و `cargo check --tests`: سبز (فقط 2 وارنینگ deprecated).
 انجام‌شده:
 - `services/lsp/mod.rs`: `LspManager` (نخ پس‌زمینه + ران‌تایم tokio، open/change/complete/hover، ایونت diagnostics/completion/hover/status)

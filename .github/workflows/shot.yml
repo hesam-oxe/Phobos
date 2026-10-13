@@ -1,0 +1,48 @@
+name: build-and-screenshot
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-shot:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libx11-dev libxi-dev \
+            libgl1-mesa-dev libasound2-dev libxcb1-dev libxkbcommon-dev \
+            libwayland-dev libegl1-mesa-dev clang libclang-dev \
+            xvfb imagemagick libgl1-mesa-dri
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Typecheck
+        run: cargo check -j 4 --tests
+
+      - name: Build (debug)
+        run: cargo build -j 2
+
+      - name: Screenshot under Xvfb
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          Xvfb :99 -screen 0 1400x900x24 &
+          export DISPLAY=:99
+          sleep 2
+          ./target/debug/phobos &
+          APP=$!
+          sleep 12
+          import -window root /tmp/phobos-shot.png || xwd -root -out /tmp/phobos-shot.xwd
+          kill $APP || true
+          ls -la /tmp/phobos-shot.*
+
+      - name: Upload screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: phobos-screenshot
+          path: /tmp/phobos-shot.*
