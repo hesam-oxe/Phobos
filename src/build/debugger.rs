@@ -123,7 +123,7 @@ impl Debugger {
             // set nonblocking via timeout loop: try 50ms
             let start = std::time::Instant::now();
             while start.elapsed().as_millis() < 120 {
-                let mut line = String::new();
+                let _line = String::new();
                 // peek: if no data, break (use fill_buf with timeout is complex; use try)
                 // Use blocking read with short timeout by checking bytes available is not portable;
                 // so read one line if ready via polling thread is overkill — do single nonblocking attempt:

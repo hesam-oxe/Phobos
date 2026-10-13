@@ -38,22 +38,32 @@ impl PtyTerminal {
     }
     pub fn poll(&mut self) {
         if self.shell.is_none() { return; }
-        // drain up to 32 messages per frame
-        let rt = self.rt();
-        rt.block_on(async {
-            if let Some(s) = self.shell.as_ref() {
+        if self.rt.is_none() {
+            self.rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all().build().ok();
+        }
+        // Collect outputs with runtime (only borrows shell), then process buffer/parser afterwards
+        let outputs: Vec<String> = {
+            let rt = self.rt.as_ref().unwrap();
+            let shell_ref = self.shell.as_ref().unwrap() as *const TerminalShell;
+            rt.block_on(async move {
+                let mut out = Vec::new();
+                let s: &TerminalShell = unsafe { &*shell_ref };
                 for _ in 0..32 {
                     if let Some(o) = s.try_recv_output().await {
-                        // strip ANSI for now (egui has no ANSI renderer)
-                        let clean = self.parser.parse(&o.data);
-                        self.buffer.push_str(&clean);
-                        if self.buffer.len() > 200_000 {
-                            self.buffer = self.buffer[self.buffer.len()-200_000..].to_string();
-                        }
+                        out.push(o.data);
                     } else { break; }
                 }
+                out
+            })
+        };
+        for data in outputs {
+            let clean = self.parser.parse(&data);
+            self.buffer.push_str(&clean);
+            if self.buffer.len() > 200_000 {
+                self.buffer = self.buffer[self.buffer.len()-200_000..].to_string();
             }
-        });
+        }
     }
     pub fn send(&mut self, text: &str) {
         if let Some(s) = self.shell.as_mut() {

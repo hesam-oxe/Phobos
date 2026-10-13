@@ -27,13 +27,9 @@ pub struct TerminalShell {
 
 impl TerminalShell {
     pub fn new() -> Result<Self> {
-        let pty_system = portable_pty::native_pty_system();
-        let pair = pty_system.openpty(portable_pty::PtySize {
-            rows: 24, cols: 80, pixel_width: 0, pixel_height: 0,
-        })?;
         let (output_tx, output_rx) = mpsc::channel(256);
         Ok(Self {
-            master: Some(pair.master),
+            master: None,
             child: None,
             writer: None,
             reader_handle: None,
@@ -51,34 +47,21 @@ impl TerminalShell {
         } else {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
         };
-        let master = self.master.take().context("PTY already spawned")?;
-        // Keep a master handle for resize; clone reader/writer before move
-        let mut master_for_child = master;
-        let mut reader = master_for_child.try_clone_reader().context("clone reader")?;
-        let writer = master_for_child.take_writer().context("take writer")?;
-        self.writer = Some(writer);
-
-        let mut cmd = portable_pty::CommandBuilder::new(&shell_cmd);
-        cmd.cwd(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
-        // Re-create pair? portable-pty 0.8 spawn needs slave; we consumed pair.master only.
-        // We still need slave: reopen PTY and use its slave for spawn, keep master.
-        // Simplest: spawn via slave from a fresh pair and keep original master reader.
-        // To avoid complexity, spawn child with slave from new pair is wrong (different pty).
-        // Correct approach: we should have kept both master and slave.
-        // Workaround: recreate everything properly:
+        // Drop old PTY if any, then create a single fresh pair and use master+slave together
+        let _ = self.master.take();
         let pty_system = portable_pty::native_pty_system();
-        let pair2 = pty_system.openpty(portable_pty::PtySize {
+        let pair = pty_system.openpty(portable_pty::PtySize {
             rows: self.size.1, cols: self.size.0, pixel_width: 0, pixel_height: 0,
         })?;
-        let mut master2 = pair2.master;
-        let slave = pair2.slave;
-        // replace reader/writer with correct pty
-        reader = master2.try_clone_reader().context("clone reader2")?;
-        self.writer = Some(master2.take_writer().context("writer2")?);
+        let master = pair.master;
+        let slave = pair.slave;
+        let mut cmd = portable_pty::CommandBuilder::new(&shell_cmd);
+        cmd.cwd(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+        let mut reader = master.try_clone_reader().context("clone reader")?;
+        self.writer = Some(master.take_writer().context("take writer")?);
         let child = slave.spawn_command(cmd).context("spawn shell")?;
         self.child = Some(child);
-        self.master = Some(master2);
-        drop(master_for_child);
+        self.master = Some(master);
 
         let output_tx = self.output_tx.clone();
         let handle = tokio::task::spawn_blocking(move || {

@@ -123,7 +123,7 @@ impl LspClient {
             initialization_options: None,
             capabilities: ClientCapabilities {
                 text_document: Some(TextDocumentClientCapabilities {
-                    synchronization: Some(TextDocumentSynchronizationClientCapabilities {
+                    synchronization: Some(TextDocumentSyncClientCapabilities {
                         dynamic_registration: Some(false), will_save: Some(false),
                         will_save_wait_until: Some(false), did_save: Some(true) }),
                     completion: Some(CompletionClientCapabilities {
@@ -142,6 +142,7 @@ impl LspClient {
             workspace_folders: Some(vec![WorkspaceFolder { uri: root_uri.clone(), name: root_path.display().to_string() }]),
             client_info: Some(ClientInfo { name: "Phobos IDE".into(), version: Some(env!("CARGO_PKG_VERSION").into()) }),
             locale: None,
+            work_done_progress_params: Default::default(),
         };
         let resp: InitializeResult = self.send_request("initialize", init_params).await?;
         self.capabilities = Some(resp.capabilities);

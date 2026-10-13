@@ -144,11 +144,12 @@ impl CodeEditor {
             "java" => Some(tree_sitter_java::language()),
             "go" => Some(tree_sitter_go::language()),
             "ruby" | "rb" => Some(tree_sitter_ruby::language()),
-            "php" => Some(tree_sitter_php::language_php()),
+            "php" => Some(tree_sitter_php::language()),
             "csharp" | "cs" | "c#" => Some(tree_sitter_c_sharp::language()),
             "bash" | "sh" => Some(tree_sitter_bash::language()),
             "json" => Some(tree_sitter_json::language()),
-            "html" => Some(tree_sitter_html::language()),
+            // HTML disabled: tree-sitter-html 0.20.4 pulls tree-sitter 0.22, mismatched with 0.20 grammars
+            // Use fallback highlighter until all grammars aligned to 0.22
             "css" => Some(tree_sitter_css::language()),
             // YAML handled via fallback highlighter (no native grammar to avoid version conflict)
             _ => None,
@@ -208,14 +209,15 @@ impl CodeEditor {
         
         // In production, this would be done on a background thread
         // and results sent back via channel
-        self.cached_highlights = self.compute_syntax_highlights(&self.content);
+        let content = self.content.clone();
+        self.cached_highlights = self.compute_syntax_highlights(&content);
     }
     
     /// Compute syntax highlights using Tree-sitter
-    fn compute_syntax_highlights(&self, code: &str) -> Vec<FormatRange> {
+    fn compute_syntax_highlights(&mut self, code: &str) -> Vec<FormatRange> {
         let mut highlights = Vec::new();
         
-        if let (Some(ref parser), Some(_lang)) = (&self.parser, &self.language_grammar) {
+        if let (Some(parser), Some(_lang)) = (&mut self.parser, &self.language_grammar) {
             if let Some(tree) = parser.parse(code, None) {
                 let root = tree.root_node();
                 
@@ -377,17 +379,18 @@ impl CodeEditor {
         
         // Draw gutter
         if self.config.show_line_numbers {
-            self.render_gutter(ui, gutter_width, available.height, line_height);
+            self.render_gutter(ui, gutter_width, available.height(), line_height);
         }
         
         // Draw editor area
-        let response = ui.put(editor_rect, |ui: &mut egui::Ui| {
+        let outer = ui.allocate_ui_at_rect(editor_rect, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     self.render_editor_content(ui, font_id, line_height, char_width);
-                });
-        }).response;
+                })
+        });
+        let response = outer.response;
         
         // Handle keyboard input
         self.handle_keyboard_input(ui, &response);
@@ -452,13 +455,14 @@ impl CodeEditor {
         let mut ranges = self.cached_highlights.clone();
         ranges.sort_by_key(|r| r.start);
         let default_color = Color32::from_rgb(212, 212, 212);
-        let layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+        let font_id2 = font_id.clone();
+        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
             let mut layout_job = egui::text::LayoutJob::default();
             let mut pos = 0usize;
-            let mut push = |s: &str, color: Color32, italic: bool, job: &mut egui::text::LayoutJob| {
+            let push = |s: &str, color: Color32, italic: bool, job: &mut egui::text::LayoutJob| {
                 if s.is_empty() { return; }
                 job.append(s, 0.0, TextFormat {
-                    font_id: font_id.clone(), color,
+                    font_id: font_id2.clone(), color,
                     italics: italic,
                     underline: egui::Stroke::NONE,
                     strikethrough: egui::Stroke::NONE,
@@ -495,23 +499,24 @@ impl CodeEditor {
             ui.fonts(|f| f.layout_job(layout_job))
         };
         
-        let response = ui.add(
-            egui::TextEdit::multiline(&mut self.content)
+        let output = egui::TextEdit::multiline(&mut self.content)
                 .font(font_id)
                 .code_editor()
                 .desired_rows(30)
                 .desired_width(f32::INFINITY)
                 .layouter(&mut layouter)
-        );
+                .show(ui);
         
-        if response.changed() {
+        if output.response.changed() {
             self.content_version += 1;
             self.recompute_highlights();
         }
         
-        // Update cursor position
-        if let Some(cp) = response.cursor_pos {
-            self.cursor_pos = cp;
+        // Update cursor position (char index -> byte index)
+        if let Some(range) = output.cursor_range {
+            let char_idx = range.primary.ccursor.index;
+            let byte_idx = self.content.char_indices().nth(char_idx).map(|(b,_)| b).unwrap_or(self.content.len());
+            self.cursor_pos = byte_idx;
         }
     }
     

@@ -9,7 +9,16 @@
 - محیط: Ubuntu 26.04، رم 780GB، CPU قوی. Rust 1.99 در `$HOME/.cargo/bin/cargo` (`/config/.cargo/bin/cargo`).
 - زبان کاربر: فارسی جواب بده، کوتاه و فنی.
 
-## وضعیت (آخرین پوش: d96767e)
+## وضعیت (آخرین پوش: d96767e — تغییرات لوکال چک‌سبز، آماده پوش)
+`cargo check -j 4`: سبز (EXIT:0، فقط 2 وارنینگ deprecated root_path/root_uri).
+فیکس‌های لوکال (12 فایل، پوش نشده):
+- `services/terminal/shell.rs`: تک `openpty` صحیح (حذف double-pair)، `master` غیر-mut
+- `languages/` (docker,kotlin,pascal,shell,swift,web): برگرداندن `fn hl` داخل `impl` (بستن درست)
+- `editor/code_editor.rs`: `language_php→language`، غیرفعال‌کردن `html` (ناسازگاری tree-sitter 0.22 vs 0.20)، `available.height()`، `allocate_ui_at_rect` به‌جای `put`، `TextEdit.show` برای `cursor_range` (char→byte)، `compute_syntax_highlights &mut` + clone، فیکس `font_id` move و `layouter mut`
+- `services/lsp/client.rs`: `TextDocumentSyncClientCapabilities` + `work_done_progress_params`
+- `ui/pty_terminal.rs`: `poll` بدون borrow-conflict (collect بعد parse)
+- `app.rs`: `minimap_enabled`
+- `build/debugger.rs`: `mut out` + `_line`
 پوش شد به `origin/main`: 42 فایل، +2866 خط.
 انجام‌شده (تکرار نکن):
 - `Cargo.toml`: حذف `tree-sitter-yaml 0.5` ناسازگار، افزودن `regex,futures,toml,dirs,url`

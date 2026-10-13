@@ -122,7 +122,7 @@ impl PhobosApp {
             watch_rx,
         };
         app.editor.config.show_line_numbers = config.show_line_numbers;
-        app.editor.config.show_minimap = config.show_minimap;
+        app.editor.config.minimap_enabled = config.show_minimap;
         app.welcome_page.recent_files = config.recent_files.clone();
         app
     }
