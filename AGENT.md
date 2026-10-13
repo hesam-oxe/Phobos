@@ -9,7 +9,13 @@
 - محیط: Ubuntu 26.04، رم 780GB، CPU قوی. Rust 1.99 در `$HOME/.cargo/bin/cargo` (`/config/.cargo/bin/cargo`).
 - زبان کاربر: فارسی جواب بده، کوتاه و فنی.
 
-## وضعیت (آخرین پوش: 01020ad — چک‌سبز، پوش شد)
+## وضعیت (آخرین پوش: 2a739dd — چک‌سبز، پوش شد)
+`cargo check -j 4` و `cargo check --tests`: سبز (فقط 2 وارنینگ deprecated).
+انجام‌شده این دور:
+- مارکت‌پلیس: کاتالوگ + search + install از TOML + remove + persist حالت در `state.toml`
+- AI واقعی: `ai/provider.rs` (OpenAI-compatible via ureq، key فقط در حافظه) + تب Remote با endpoint/model ذخیره‌شونده
+- DAP کامل: `build/dap.rs` (framing، launch/setBreakpoints/continue/next/stepIn، زنجیره stopped→threads→stack→scopes→vars) + پنل دیباگ (threads/stack/vars/output، فوروارد برک‌پوینت‌ها)
+- یونیت‌تست: dap/lsp/code_editor/plugins/app/provider (روی ماشین کاربر اجرا می‌شوند؛ اینجا فقط کامپایل‌چک به‌خاطر killer محیط)
 `cargo check -j 4` و `cargo check --tests`: سبز (فقط 2 وارنینگ deprecated).
 انجام‌شده:
 - `services/lsp/mod.rs`: `LspManager` (نخ پس‌زمینه + ران‌تایم tokio، open/change/complete/hover، ایونت diagnostics/completion/hover/status)
