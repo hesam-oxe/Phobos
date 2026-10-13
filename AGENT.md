@@ -9,7 +9,14 @@
 - محیط: Ubuntu 26.04، رم 780GB، CPU قوی. Rust 1.99 در `$HOME/.cargo/bin/cargo` (`/config/.cargo/bin/cargo`).
 - زبان کاربر: فارسی جواب بده، کوتاه و فنی.
 
-## وضعیت (آخرین پوش: 417cb46 — چک‌سبز، پوش شد)
+## وضعیت (آخرین پوش: 01020ad — چک‌سبز، پوش شد)
+`cargo check -j 4` و `cargo check --tests`: سبز (فقط 2 وارنینگ deprecated).
+انجام‌شده:
+- `services/lsp/mod.rs`: `LspManager` (نخ پس‌زمینه + ران‌تایم tokio، open/change/complete/hover، ایونت diagnostics/completion/hover/status)
+- `app.rs`: وایر LSP (diagnostics→گاتر، Ctrl+Space completion با غنی‌سازی سرور، Ctrl+K hover، پالت)، استتوس‌بار زنده
+- `editor/`: `cursor_lsp_pos` (UTF-16)، `jump_to_line`، `diagnostic_counts`، `set_suggestions/is_visible`، مینی‌مپ واقعی (bars + خط کرسر + کلیک‌پرش)
+- `build/runner.rs`: `AsyncRunner` واقعی (threads + drain + try_exit + stop)؛ `ui/build_panel.rs`: جاب نخ‌دار استریمینگ + Stop
+- تست محیط: `cargo test` (codegen) روی این باکس کشته می‌شود (حتی `syn` با `-j1`)؛ hello-world اوکی — محدودیت محیط، نه کد.
 `cargo check -j 4`: سبز (EXIT:0، فقط 2 وارنینگ deprecated root_path/root_uri).
 فیکس‌های لوکال (12 فایل، پوش نشده):
 - `services/terminal/shell.rs`: تک `openpty` صحیح (حذف double-pair)، `master` غیر-mut
