@@ -107,6 +107,8 @@ impl Compiler {
 
         // Build command arguments
         let mut args = Vec::new();
+        // The actual produced executable, tracked per toolchain
+        let mut produced: Option<PathBuf> = None;
         
         match self.compiler_type {
             CompilerType::Rustc => {
@@ -115,19 +117,21 @@ impl Compiler {
                 let output = self.config.output_dir.join("output");
                 args.push(output.to_string_lossy().to_string());
                 args.extend(self.config.flags.clone());
+                produced = Some(output);
             }
             CompilerType::Gcc | CompilerType::Clang => {
                 args.push(source_file.to_string_lossy().to_string());
                 args.push("-o".to_string());
-                let ext = if self.compiler_type == CompilerType::Gcc { "out" } else { "out" };
-                let output = self.config.output_dir.join(format!("output.{}", ext));
+                let output = self.config.output_dir.join("output.out");
                 args.push(output.to_string_lossy().to_string());
                 args.extend(self.config.flags.clone());
+                produced = Some(output);
             }
             CompilerType::Javac => {
                 args.push("-d".to_string());
                 args.push(self.config.output_dir.to_string_lossy().to_string());
                 args.push(source_file.to_string_lossy().to_string());
+                // javac emits .class files; Runner invokes `java <Class>` instead
             }
             CompilerType::Go => {
                 args.push("build".to_string());
@@ -135,6 +139,7 @@ impl Compiler {
                 let output = self.config.output_dir.join("output");
                 args.push(output.to_string_lossy().to_string());
                 args.push(source_file.to_string_lossy().to_string());
+                produced = Some(output);
             }
             CompilerType::Dotnet => {
                 args.push("build".to_string());
@@ -174,13 +179,33 @@ impl Compiler {
                     Ok(o) => {
                         let duration = start_time.elapsed();
                         let success = o.status.success();
+                        // locate target/debug/<crate-name> next to the manifest
+                        let exe = if success {
+                            let name = std::fs::read_to_string(&manifest)
+                                .ok()
+                                .and_then(|s| toml::from_str::<toml::Value>(&s).ok())
+                                .and_then(|v| {
+                                    v.get("package")
+                                        .and_then(|p| p.get("name"))
+                                        .and_then(|n| n.as_str())
+                                        .map(|s| s.to_string())
+                                });
+                            name
+                                .and_then(|n| {
+                                    manifest.parent().map(|d| {
+                                        d.join("target").join("debug").join(&n)
+                                    })
+                                })
+                                .filter(|p| p.exists())
+                                .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
+                        } else {
+                            None
+                        };
                         return Ok(CompilationResult {
                             success,
                             output: String::from_utf8_lossy(&o.stdout).to_string(),
                             errors: String::from_utf8_lossy(&o.stderr).to_string(),
-                            executable_path: if success {
-                                Some(self.config.output_dir.join("output"))
-                            } else { None },
+                            executable_path: exe,
                             duration_ms: duration.as_millis() as u64,
                         });
                     }
@@ -195,15 +220,22 @@ impl Compiler {
             .with_context(|| format!("Failed to spawn compiler: {}", command))?;
 
         let duration = start_time.elapsed();
+        // Always report an absolute executable path so the runner can spawn it
+        // regardless of its own working directory.
+        let exe_abs = produced
+            .filter(|_| output.status.success())
+            .map(|p| {
+                std::fs::canonicalize(&p).unwrap_or_else(|_| {
+                    std::env::current_dir()
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                        .join(&p)
+                })
+            });
         Ok(CompilationResult {
             success: output.status.success(),
             output: String::from_utf8_lossy(&output.stdout).to_string(),
             errors: String::from_utf8_lossy(&output.stderr).to_string(),
-            executable_path: if output.status.success() {
-                Some(self.config.output_dir.join("output"))
-            } else {
-                None
-            },
+            executable_path: exe_abs,
             duration_ms: duration.as_millis() as u64,
         })
     }
@@ -249,4 +281,79 @@ fn find_cargo_manifest(start: &Path) -> Option<PathBuf> {
         dir = d.parent().map(|p| p.to_path_buf());
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn have(cmd: &str) -> bool {
+        Command::new("which")
+            .arg(cmd)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("phobos-cc-{}-{}", tag, std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn rust_single_file_compile_then_run() {
+        if !have("rustc") {
+            eprintln!("skip: rustc not found");
+            return;
+        }
+        let dir = temp_dir("rust");
+        let src = dir.join("hello.rs");
+        std::fs::write(&src, "fn main() { println!(\"rust-compile-ok\"); }\n").unwrap();
+        let mut c = Compiler::new("rust");
+        c.set_output_dir(dir.join("out").to_str().unwrap());
+        let r = c.compile(&src).expect("compile");
+        assert!(r.success, "compile errors: {}", r.errors);
+        let exe = r.executable_path.expect("executable path");
+        assert!(exe.exists(), "no executable at {:?}", exe);
+        let out = Command::new(&exe).output().expect("run compiled exe");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("rust-compile-ok"), "stdout: {:?}", stdout);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c_file_compiles_with_gcc() {
+        if !have("g++") {
+            eprintln!("skip: g++ not found");
+            return;
+        }
+        let dir = temp_dir("c");
+        let src = dir.join("hello.c");
+        std::fs::write(&src, "#include <stdio.h>\nint main(void){ printf(\"c-compile-ok\\n\"); return 0; }\n").unwrap();
+        let mut c = Compiler::new("c");
+        c.set_output_dir(dir.join("out").to_str().unwrap());
+        let r = c.compile(&src).expect("compile");
+        assert!(r.success, "compile errors: {}", r.errors);
+        let exe = r.executable_path.expect("executable path");
+        assert!(exe.exists());
+        let out = Command::new(&exe).output().expect("run");
+        assert!(String::from_utf8_lossy(&out.stdout).contains("c-compile-ok"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unknown_language_errors() {
+        let c = Compiler::new("no-such-lang");
+        let res = c.compile(Path::new("/tmp/nonexistent.q"));
+        assert!(res.is_err(), "unknown language must not silently succeed");
+    }
+
+    #[test]
+    fn compiler_type_mapping() {
+        assert!(matches!(CompilerType::from_language("rust"), CompilerType::Rustc));
+        assert!(matches!(CompilerType::from_language("Python"), CompilerType::Python));
+        assert!(matches!(CompilerType::from_language("go"), CompilerType::Go));
+        assert!(matches!(CompilerType::from_language("weird"), CompilerType::Custom(_)));
+    }
 }

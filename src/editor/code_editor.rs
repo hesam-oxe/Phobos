@@ -621,8 +621,10 @@ mod tests {
     fn lsp_pos_second_line() {
         let mut e = CodeEditor::new();
         e.content = "ab\ncdef".into();
-        e.cursor_pos = 5; // after 'c'
+        e.cursor_pos = 4; // byte offset right after 'c' (line 2, col 1)
         assert_eq!(e.cursor_lsp_pos(), (1, 1));
+        e.cursor_pos = 6; // after 'e' (line 2, col 3)
+        assert_eq!(e.cursor_lsp_pos(), (1, 3));
     }
 
     #[test]

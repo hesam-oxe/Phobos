@@ -29,4 +29,4 @@ htmlcov/
 # Rust-specific
 Cargo.lock
 **/Cargo.lock
-```
+```build/

@@ -37,6 +37,21 @@ impl CompletionProvider {
         self.selected_index = 0;
     }
 
+    /// Prepend a snippet suggestion (e.g. Emmet expansion) at the top.
+    pub fn prepend_snippet(&mut self, text: String, description: String) {
+        self.suggestions.insert(
+            0,
+            Suggestion {
+                text,
+                kind: SuggestionKind::Snippet,
+                confidence: 1.0,
+                description,
+            },
+        );
+        self.popup_visible = true;
+        self.selected_index = 0;
+    }
+
     pub fn is_visible(&self) -> bool {
         self.popup_visible && !self.suggestions.is_empty()
     }

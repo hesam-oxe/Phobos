@@ -222,8 +222,13 @@ mod tests {
     #[test]
     fn fresh_manager_search_is_empty() {
         let m = PluginManager::new();
-        assert!(m.search("").is_empty());
+        // fresh manager has nothing installed until discover() runs
         assert!(!m.enabled("phobos.git"));
+        // unknown query yields nothing
+        assert!(m.search("nonexistent-plugin").is_empty());
+        // empty query = marketplace browse: only external catalog entries surface
+        let all = m.search("");
+        assert!(all.iter().all(|p| p.external));
     }
 
     #[test]

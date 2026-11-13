@@ -7,6 +7,7 @@ pub mod completion;
 pub mod minimap;
 pub mod hover;
 pub mod diagnostics;
+pub mod emmet;
 
 pub use code_editor::CodeEditor;
 pub use syntax::{SyntaxHighlighter, HighlightTheme};

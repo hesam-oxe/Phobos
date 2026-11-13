@@ -64,6 +64,9 @@ impl Theme {
         visuals.selection.bg_fill = self.selection;
         visuals.selection.stroke = Stroke::new(1.0, self.accent);
         
+        // Scrollbars — slim and discreet
+        visuals.extreme_bg_color = self.bg_primary;
+        
         // Text
         visuals.override_text_color = Some(self.text_primary);
         
@@ -71,10 +74,28 @@ impl Theme {
         visuals.hyperlink_color = self.accent;
         
         // Menu
-        visuals.menu_rounding = Rounding::same(6.0);
+        visuals.menu_rounding = Rounding::same(8.0);
+        
+        // Smooth animations + global style polish
+        ctx.style_mut(|style| {
+            style.visuals = visuals.clone();
+            style.animation_time = 0.12; // snappy, not sluggish
+            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+            style.spacing.button_padding = egui::vec2(8.0, 4.0);
+            style.spacing.menu_margin = egui::Margin::symmetric(8.0, 6.0);
+            style.spacing.scroll.bar_width = 10.0;
+            style.spacing.scroll.bar_inner_margin = 3.0;
+            style.spacing.scroll.bar_outer_margin = 2.0;
+            style.spacing.interact_size.y = 26.0;
+        });
         
         // Apply
         ctx.set_visuals(visuals);
         ctx.set_pixels_per_point(1.2); // Scale for readability
     }
 }
+
+/// Shared accent color used across custom widgets (tab underline, gutter, etc.)
+pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(206, 145, 120);
+/// Subtle border color shared across custom widgets
+pub const BORDER: egui::Color32 = egui::Color32::from_rgb(60, 60, 60);

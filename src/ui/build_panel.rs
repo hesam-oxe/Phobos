@@ -270,3 +270,143 @@ fn build_thread(
         }));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn have(cmd: &str) -> bool {
+        std::process::Command::new("which")
+            .arg(cmd)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// End-to-end: exactly what a user gets when they hit Run on an interpreted file.
+    #[test]
+    fn python_run_job_streams_output_and_finishes() {
+        if !have("python3") {
+            eprintln!("skip: python3 not found");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("phobos-job-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("job.py");
+        std::fs::write(&file, "print('job-output-ok')\n").unwrap();
+
+        let (tx, rx) = channel::<JobMsg>();
+        let (_cmd_tx, cmd_rx) = channel::<JobCmd>();
+        let d2 = dir.clone();
+        let handle = std::thread::spawn(move || {
+            build_thread("python", &file, &d2, true, &tx, &cmd_rx);
+        });
+
+        let mut saw_output = false;
+        let mut saw_success_done = false;
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while Instant::now() < deadline {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    JobMsg::Line { text, err: false } => {
+                        if text.contains("job-output-ok") {
+                            saw_output = true;
+                        }
+                    }
+                    JobMsg::RunDone(r) => saw_success_done = r.success,
+                    JobMsg::Failed(e) => panic!("job failed: {}", e),
+                    _ => {}
+                }
+            }
+            if saw_output && saw_success_done {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        let _ = handle.join();
+        assert!(saw_output, "did not see program output in stream");
+        assert!(saw_success_done, "RunDone did not report success");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Compiled-language job: rust single file → compile → run → output.
+    #[test]
+    fn rust_build_then_run_job_produces_output() {
+        if !have("rustc") {
+            eprintln!("skip: rustc not found");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("phobos-job-rs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("job.rs");
+        std::fs::write(&file, "fn main() { println!(\"rust-job-ok\"); }\n").unwrap();
+
+        let (tx, rx) = channel::<JobMsg>();
+        let (_cmd_tx, cmd_rx) = channel::<JobCmd>();
+        let d2 = dir.clone();
+        let handle = std::thread::spawn(move || {
+            build_thread("rust", &file, &d2, true, &tx, &cmd_rx);
+        });
+
+        let mut saw_compile_ok = false;
+        let mut saw_output = false;
+        let mut saw_success_done = false;
+        let deadline = Instant::now() + Duration::from_secs(90);
+        while Instant::now() < deadline {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    JobMsg::CompileDone(r) => saw_compile_ok = r.success,
+                    JobMsg::Line { text, err: false } => {
+                        if text.contains("rust-job-ok") {
+                            saw_output = true;
+                        }
+                    }
+                    JobMsg::Line { .. } => {}
+                    JobMsg::RunDone(r) => saw_success_done = r.success,
+                    JobMsg::Failed(e) => panic!("job failed: {}", e),
+                }
+            }
+            if saw_compile_ok && saw_output && saw_success_done {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        let _ = handle.join();
+        assert!(saw_compile_ok, "compile did not succeed");
+        assert!(saw_output, "did not see program output in stream");
+        assert!(saw_success_done, "RunDone did not report success");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Stop signal terminates a long-running job.
+    #[test]
+    fn stop_terminates_running_job() {
+        if !have("python3") {
+            eprintln!("skip: python3 not found");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("phobos-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("loop.py");
+        std::fs::write(&file, "import time\nwhile True: time.sleep(0.1)\n").unwrap();
+
+        let (tx, rx) = channel::<JobMsg>();
+        let (cmd_tx, cmd_rx) = channel::<JobCmd>();
+        let d2 = dir.clone();
+        let handle = std::thread::spawn(move || {
+            build_thread("python", &file, &d2, true, &tx, &cmd_rx);
+        });
+
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = cmd_tx.send(JobCmd::Stop);
+        // thread must finish promptly after stop
+        let (send, recv) = channel();
+        std::thread::spawn(move || {
+            let _ = handle.join();
+            let _ = send.send(());
+        });
+        assert!(recv.recv_timeout(Duration::from_secs(5)).is_ok(), "job thread hung after Stop");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

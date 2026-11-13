@@ -474,10 +474,16 @@ pub fn split_adapter(s: &str) -> (String, Vec<String>) {
 }
 
 pub fn workspace_of(program: &str) -> PathBuf {
-    std::path::Path::new(program)
+    let p = std::path::Path::new(program)
         .parent()
         .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_default();
+    // relative single-component paths ("prog") yield an empty parent → cwd
+    if p.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        p
+    }
 }
 
 #[cfg(test)]

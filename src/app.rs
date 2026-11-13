@@ -6,6 +6,7 @@ use crate::editor::code_editor::CodeEditor;
 use crate::editor::syntax::SyntaxHighlighter;
 use crate::editor::minimap::Minimap;
 use crate::editor::completion::CompletionProvider;
+use crate::editor::emmet;
 use crate::core::{CompletionItem as CoreCompletionItem, CompletionItemKind as CoreKind};
 use crate::ai::ghost_typer::{Suggestion, SuggestionKind};
 use crate::services::lsp::{LspManager, LspEvent};
@@ -363,10 +364,52 @@ impl PhobosApp {
             .unwrap_or_else(|| PathBuf::from("."))
     }
 
+    /// Expand an Emmet abbreviation right before the cursor (Tab). Returns true when handled.
+    fn try_emmet_expand(&mut self) -> bool {
+        let lang = self.editor.language.clone();
+        if !emmet::is_supported(&lang) {
+            return false;
+        }
+        let css = emmet::is_css(&lang);
+        let (word, start) = emmet::word_before_cursor(
+            &self.editor.content,
+            self.editor.cursor_pos,
+            css,
+        );
+        if word.is_empty() {
+            return false;
+        }
+        let Some(expanded) = emmet::expand_for(&lang, &word) else {
+            return false;
+        };
+        let end = self.editor.cursor_pos.min(self.editor.content.len());
+        if start > end || !self.editor.content.is_char_boundary(start) {
+            return false;
+        }
+        self.editor.content.replace_range(start..end, "");
+        self.editor.cursor_pos = start;
+        self.editor.insert_text(&expanded);
+        true
+    }
+
     fn request_lsp_completion(&mut self) {
         let pos = self.editor.cursor_pos;
         let code = self.editor.content.clone();
         self.completion.update_suggestions(&code, pos);
+        // Emmet: prepend expanded-abbreviation preview when applicable
+        if emmet::is_supported(&self.editor.language) {
+            let (word, _) = emmet::word_before_cursor(
+                &code,
+                pos,
+                emmet::is_css(&self.editor.language),
+            );
+            if let Some(expanded) = emmet::expand_for(&self.editor.language, &word) {
+                self.completion.prepend_snippet(
+                    expanded,
+                    format!("Emmet: {}", word),
+                );
+            }
+        }
         if let Some(path) = self.current_file_path.clone() {
             if LspManager::supports(&path) {
                 let (line, col) = self.editor.cursor_lsp_pos();
@@ -568,12 +611,21 @@ impl eframe::App for PhobosApp {
         if ctx.input(|i| i.key_pressed(egui::Key::I) && i.modifiers.ctrl) { self.show_ai_panel = !self.show_ai_panel; }
         // LSP completion (Ctrl+Space): instant local AI + async server enrich
         if ctx.input(|i| i.key_pressed(egui::Key::Space) && i.modifiers.ctrl) { self.request_lsp_completion(); }
-        // Accept selected completion with Tab (consume so editor doesn't indent)
-        if self.completion.is_visible() && ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
-            if let Some(text) = self.completion.accept_completion() {
-                self.editor.insert_text(&text);
+        // Tab: accept completion if popup open, else expand Emmet abbreviation at cursor
+        if ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
+            let mut consumed_tab = false;
+            if self.completion.is_visible() {
+                if let Some(text) = self.completion.accept_completion() {
+                    self.editor.insert_text(&text);
+                }
+                self.completion.dismiss();
+                consumed_tab = true;
+            } else if self.try_emmet_expand() {
+                consumed_tab = true;
             }
-            ctx.input_mut(|i| { i.consume_key(egui::Modifiers::NONE, egui::Key::Tab); });
+            if consumed_tab {
+                ctx.input_mut(|i| { i.consume_key(egui::Modifiers::NONE, egui::Key::Tab); });
+            }
         }
         if self.completion.is_visible() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.completion.dismiss();
