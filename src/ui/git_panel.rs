@@ -9,6 +9,13 @@ pub struct GitPanel {
 
 impl GitPanel {
     pub fn new() -> Self { Self { visible: false, path: ".".into() } }
+
+    /// Current branch for the status bar (cheap git2 read, no subprocess).
+    pub fn branch_for_display(&self) -> Option<String> {
+        let info = crate::services::git::git_info(&self.path);
+        let b = info.branch.trim();
+        if b.is_empty() { None } else { Some(b.to_string()) }
+    }
     pub fn show(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.heading("🌿 Git");

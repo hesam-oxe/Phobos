@@ -230,7 +230,11 @@ fn build_thread(
         return;
     }
     // compiled: build first (blocking, in worker thread so UI stays live)
-    let c = Compiler::new(lang);
+    let mut c = Compiler::new(lang);
+    // output goes next to the source file, not the IDE process cwd
+    if let Some(parent) = file.parent() {
+        c.set_output_dir(parent.join("build").to_string_lossy().as_ref());
+    }
     let start = std::time::Instant::now();
     let result = match c.compile(file) {
         Ok(r) => r,

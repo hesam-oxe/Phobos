@@ -1,5 +1,7 @@
 use eframe::egui;
 use std::path::Path;
+use crate::ui::theme::ACCENT;
+const DIR_COLOR: egui::Color32 = egui::Color32::from_rgb(240, 190, 90);
 
 pub struct FileExplorer {
     pub current_dir: String,
@@ -94,44 +96,140 @@ impl FileExplorer {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> &mut Self {
-        ui.heading("📁 Explorer");
-        ui.separator();
-
         ui.horizontal(|ui| {
-            if ui.button("⬆").clicked() {
-                if let Some(parent) = Path::new(&self.current_dir).parent() {
-                    self.current_dir = parent.to_string_lossy().to_string();
+            ui.label(
+                egui::RichText::new("EXPLORER")
+                    .size(11.0)
+                    .strong()
+                    .color(egui::Color32::from_rgb(150, 150, 165)),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("🔄").clicked() {
                     self.refresh();
                 }
-            }
-            if ui.button("🔄").clicked() {
-                self.refresh();
-            }
-            ui.label(&self.current_dir);
+                if ui.small_button("⬆").clicked() {
+                    if let Some(parent) = Path::new(&self.current_dir).parent() {
+                        self.current_dir = parent.to_string_lossy().to_string();
+                        self.refresh();
+                    }
+                }
+            });
         });
+
+        // breadcrumb path
+        let crumbs: Vec<&str> = self.current_dir.split('/').filter(|c| !c.is_empty()).collect();
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new(
+                    if crumbs.is_empty() { "/".to_string() } else { format!("/ {}", crumbs.join(" / ")) },
+                )
+                .size(10.0)
+                .color(egui::Color32::from_rgb(110, 112, 130)),
+            );
+        });
+        ui.add_space(2.0);
         ui.separator();
 
+        let theme_ok = true;
         egui::ScrollArea::vertical().show(ui, |ui| {
             for (i, entry) in self.entries.clone().iter().enumerate() {
                 let selected = self.selected == Some(i);
-                let response = ui.selectable_label(
-                    selected,
-                    format!("{} {}  {}", entry.icon, entry.name, entry.size)
+                let (rect, resp) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), 22.0),
+                    egui::Sense::click(),
                 );
+                let hovered = resp.hovered();
 
-                if response.clicked() {
+                // row background
+                if selected {
+                    ui.painter().rect_filled(
+                        rect,
+                        egui::Rounding::same(5.0),
+                        egui::Color32::from_rgb(45, 44, 60),
+                    );
+                    // accent left bar
+                    ui.painter().rect_filled(
+                        egui::Rect::from_min_size(
+                            egui::pos2(rect.left(), rect.top() + 2.0),
+                            egui::vec2(3.0, rect.height() - 4.0),
+                        ),
+                        egui::Rounding::same(2.0),
+                        ACCENT,
+                    );
+                } else if hovered {
+                    ui.painter().rect_filled(
+                        rect,
+                        egui::Rounding::same(5.0),
+                        egui::Color32::from_rgb(38, 38, 50),
+                    );
+                }
+
+                let icon_color = if entry.is_dir { DIR_COLOR } else { file_color(&entry.name) };
+                // colored type dot
+                ui.painter().circle_filled(
+                    egui::pos2(rect.left() + 9.0, rect.center().y),
+                    3.5,
+                    icon_color,
+                );
+                // name
+                let name_x = rect.left() + 18.0;
+                ui.painter().text(
+                    egui::pos2(name_x, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    &entry.name,
+                    egui::FontId::proportional(12.5),
+                    if selected || hovered {
+                        egui::Color32::from_rgb(235, 235, 245)
+                    } else {
+                        egui::Color32::from_rgb(190, 190, 205)
+                    },
+                );
+                // size (right aligned)
+                if !entry.size.is_empty() {
+                    ui.painter().text(
+                        egui::pos2(rect.right() - 8.0, rect.center().y),
+                        egui::Align2::RIGHT_CENTER,
+                        &entry.size,
+                        egui::FontId::monospace(9.5),
+                        egui::Color32::from_rgb(105, 107, 125),
+                    );
+                }
+
+                if resp.clicked() {
                     self.selected = Some(i);
                     if entry.is_dir {
                         self.current_dir = entry.path.clone();
                         self.refresh();
                     } else {
-                        // Fire file open event
                         self.on_file_open = Some(entry.path.clone());
                     }
                 }
             }
         });
-
+        let _ = theme_ok;
         self
     }
 }
+
+fn file_color(name: &str) -> egui::Color32 {
+    match name.rsplit('.').next().unwrap_or("") {
+        "rs" => egui::Color32::from_rgb(222, 130, 70),
+        "py" => egui::Color32::from_rgb(80, 170, 220),
+        "js" | "mjs" | "cjs" => egui::Color32::from_rgb(230, 190, 70),
+        "ts" | "tsx" => egui::Color32::from_rgb(90, 150, 250),
+        "html" | "htm" | "vue" | "svelte" => egui::Color32::from_rgb(230, 110, 80),
+        "css" | "scss" | "less" => egui::Color32::from_rgb(110, 130, 250),
+        "json" => egui::Color32::from_rgb(230, 210, 110),
+        "toml" | "yaml" | "yml" => egui::Color32::from_rgb(160, 160, 175),
+        "md" | "markdown" => egui::Color32::from_rgb(150, 190, 240),
+        "c" | "h" | "cpp" | "hpp" => egui::Color32::from_rgb(100, 170, 230),
+        "java" => egui::Color32::from_rgb(220, 140, 90),
+        "go" => egui::Color32::from_rgb(90, 190, 220),
+        "php" => egui::Color32::from_rgb(150, 130, 210),
+        "sh" | "bash" | "zsh" | "fish" => egui::Color32::from_rgb(140, 200, 120),
+        "sql" => egui::Color32::from_rgb(200, 170, 120),
+        "rb" => egui::Color32::from_rgb(230, 100, 100),
+        _ => egui::Color32::from_rgb(130, 132, 150),
+    }
+}
+

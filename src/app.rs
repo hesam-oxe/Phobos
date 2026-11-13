@@ -96,7 +96,7 @@ impl PhobosApp {
             editors: HashMap::new(),
             file_explorer: FileExplorer::new(),
             tabs: TabManager::new(),
-            theme: Theme::dark(),
+            theme: Theme::by_name(&config.theme).unwrap_or_else(Theme::god),
             status_bar: StatusBar::new(),
             search_panel: SearchPanel::new(),
             terminal: TerminalPanel::new(),
@@ -505,6 +505,20 @@ impl PhobosApp {
                         ui.checkbox(&mut self.editor.config.bracket_matching, "🔗 Bracket Matching");
                         ui.checkbox(&mut self.split_view, "📊 Split View (Ctrl+\\)");
                         ui.separator();
+                        ui.separator();
+                        ui.menu_button("🎨 Theme", |ui| {
+                            for name in Theme::names() {
+                                let mark = if name == self.theme.name { "●" } else { "○" };
+                                if ui.button(format!("{} {}", mark, name)).clicked() {
+                                    if let Some(t) = Theme::by_name(name) {
+                                        self.theme = t;
+                                        self.config.theme = name.to_string();
+                                        self.persist_config();
+                                    }
+                                    ui.close_menu();
+                                }
+                            }
+                        });
                         if ui.button("🧘 Zen Mode").clicked() { self.zen_mode.toggle(); }
                         if ui.button("🔍 Command Palette... (Ctrl+P)").clicked() { self.show_command_palette = true; }
                     });
@@ -535,7 +549,7 @@ impl PhobosApp {
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(20.0);
-                        ui.label(egui::RichText::new("🔥 v1.0 GOD").color(self.theme.text_secondary).size(11.0));
+                        ui.label(egui::RichText::new("🔥 v1.0 GOD").color(self.theme.accent).size(11.0).strong());
                     });
                 });
             });
@@ -672,7 +686,7 @@ impl eframe::App for PhobosApp {
 
         if self.welcome_page.visible {
             egui::CentralPanel::default().show(ctx, |ui| {
-                if self.welcome_page.show(ui).is_some() { self.open_file(); }
+                if self.welcome_page.show(ui, &self.theme).is_some() { self.open_file(); }
             });
         } else {
             if self.show_file_explorer && !self.zen_mode.active {
@@ -847,14 +861,15 @@ impl eframe::App for PhobosApp {
         }
         if !self.zen_mode.active {
             egui::TopBottomPanel::bottom("status_bar")
-                .frame(Frame { fill: Color32::from_rgb(0, 122, 204), inner_margin: Margin::symmetric(12.0, 4.0), ..Default::default() })
+                .frame(Frame { fill: self.theme.bg_secondary, inner_margin: Margin::symmetric(12.0, 4.0), ..Default::default() })
                 .show(ctx, |ui| {
                     let lsp_on = self
                         .current_file_path
                         .as_deref()
                         .map(LspManager::supports)
                         .unwrap_or(false);
-                    self.status_bar.show(ui, &self.editor, lsp_on);
+                    self.status_bar.branch = self.git_panel.branch_for_display();
+                    self.status_bar.show(ui, &self.theme, &self.editor, lsp_on);
                 });
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
