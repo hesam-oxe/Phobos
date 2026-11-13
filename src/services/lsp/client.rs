@@ -118,7 +118,9 @@ impl LspClient {
 
         let init_params = InitializeParams {
             process_id: Some(std::process::id()),
+            #[allow(deprecated)] // required field, deprecated by lsp-types
             root_path: None,
+            #[allow(deprecated)] // required field, deprecated by lsp-types
             root_uri: Some(root_uri.clone()),
             initialization_options: None,
             capabilities: ClientCapabilities {

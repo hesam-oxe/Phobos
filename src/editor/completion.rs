@@ -1,7 +1,7 @@
 // Phobos IDE - Completion Module
 // Intelligent code completion system with AI integration
 
-use crate::ui::theme::ACCENT;
+use crate::ui::theme::{accent_of, bg_active_of, bg_hover_of, border_of, text_of, text_weak_of};
 use eframe::egui;
 use egui::{Color32, FontId, Frame, Margin, Rounding, ScrollArea, Ui, Vec2};
 use crate::ai::ghost_typer::{GhostTyper, Suggestion, SuggestionKind};
@@ -98,8 +98,8 @@ impl CompletionProvider {
             .title_bar(false)
             .fixed_size([340.0, 220.0])
             .frame(Frame {
-                fill: Color32::from_rgb(24, 24, 32),
-                stroke: egui::Stroke::new(1.0, Color32::from_rgb(70, 70, 92)),
+                fill: ui.ctx().style().visuals.window_fill,
+                stroke: egui::Stroke::new(1.0, border_of(ui.ctx())),
                 rounding: Rounding::same(10.0),
                 inner_margin: Margin::same(6.0),
                 shadow: egui::epaint::Shadow {
@@ -125,21 +125,17 @@ impl CompletionProvider {
                             egui::Sense::click(),
                         );
                         if is_selected {
-                            ui.painter().rect_filled(
-                                rect,
-                                Rounding::same(6.0),
-                                Color32::from_rgb(58, 44, 92),
-                            );
+                            ui.painter().rect_filled(rect, Rounding::same(6.0), bg_active_of(ui.ctx()));
                             ui.painter().rect_filled(
                                 egui::Rect::from_min_size(
                                     egui::pos2(rect.left() + 2.0, rect.top() + 4.0),
                                     egui::vec2(2.5, row_h - 8.0),
                                 ),
                                 Rounding::same(1.5),
-                                ACCENT,
+                                accent_of(ui.ctx()),
                             );
                         } else if response.hovered() {
-                            ui.painter().rect_filled(rect, Rounding::same(6.0), Color32::from_rgb(36, 36, 48));
+                            ui.painter().rect_filled(rect, Rounding::same(6.0), bg_hover_of(ui.ctx()));
                         }
                         // kind icon
                         ui.painter().text(
@@ -156,7 +152,7 @@ impl CompletionProvider {
                             egui::Align2::LEFT_CENTER,
                             &text,
                             FontId::monospace(12.5),
-                            if is_selected { Color32::WHITE } else { Color32::from_rgb(200, 200, 215) },
+                            if is_selected { text_of(ui.ctx()) } else { ui.ctx().style().visuals.text_color() },
                         );
                         // description right
                         if !suggestion.description.is_empty() {
@@ -165,7 +161,7 @@ impl CompletionProvider {
                                 egui::Align2::RIGHT_CENTER,
                                 &truncate_text(&suggestion.description, 18),
                                 FontId::proportional(9.5),
-                                Color32::from_rgb(110, 112, 135),
+                                text_weak_of(ui.ctx()),
                             );
                         }
                         if response.clicked() {

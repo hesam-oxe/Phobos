@@ -2,6 +2,7 @@
 use anyhow::Result;
 
 pub struct GitInfo {
+    pub in_repo: bool,
     pub branch: String,
     pub ahead: usize,
     pub behind: usize,
@@ -12,7 +13,7 @@ pub struct GitInfo {
 
 impl Default for GitInfo {
     fn default() -> Self {
-        Self { branch: "main".into(), ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0 }
+        Self { in_repo: false, branch: String::new(), ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0 }
     }
 }
 
@@ -21,6 +22,7 @@ pub fn git_info(path: &str) -> GitInfo {
     let repo = match git2::Repository::discover(path) {
         Ok(r) => r, Err(_) => return info,
     };
+    info.in_repo = true;
     if let Ok(head) = repo.head() {
         if let Some(name) = head.shorthand() { info.branch = name.to_string(); }
     }

@@ -2,6 +2,15 @@ use eframe::egui;
 use egui::{Color32, RichText, pos2, Align2, Rounding, Stroke};
 use crate::ui::theme::{Theme, gradient_rect, glow_line, ACCENT};
 
+#[derive(Debug, Clone)]
+pub enum WelcomeAction {
+    NewFile,
+    OpenFile,
+    OpenFolder,
+    OpenPath(String),
+    Plugins,
+}
+
 pub struct WelcomePage {
     pub visible: bool,
     pub recent_files: Vec<String>,
@@ -15,12 +24,12 @@ impl WelcomePage {
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, theme: &Theme) -> Option<String> {
+    pub fn show(&mut self, ui: &mut egui::Ui, theme: &Theme) -> Option<WelcomeAction> {
         if !self.visible {
             return None;
         }
 
-        let mut opened_file = None;
+        let mut action: Option<WelcomeAction> = None;
         let full_rect = ui.available_rect_before_wrap();
 
         // ── Hero gradient backdrop ───────────────────────────────────────────
@@ -156,7 +165,7 @@ impl WelcomePage {
                         if resp.clicked() {
                             match i {
                                 0 | 1 => {
-                                    opened_file = Some(String::new());
+                                    action = Some(WelcomeAction::OpenFile);
                                     self.visible = false;
                                 }
                                 2 => {
@@ -214,7 +223,7 @@ impl WelcomePage {
                             if hovered { theme.accent } else { theme.text_primary },
                         );
                         if resp.clicked() {
-                            opened_file = Some(file.clone());
+                            action = Some(WelcomeAction::OpenPath(file.clone()));
                             self.visible = false;
                         }
                         ui.add_space(2.0);
@@ -266,6 +275,6 @@ impl WelcomePage {
             ui.add_space(20.0);
         });
 
-        opened_file
+        action
     }
 }

@@ -22,7 +22,7 @@ pub struct PhobosConfig {
 impl Default for PhobosConfig {
     fn default() -> Self {
         Self {
-            theme: "dark".into(), font_size: 14, tab_size: 4,
+            theme: "Phobos God".into(), font_size: 14, tab_size: 4,
             auto_save: true, auto_save_delay_ms: 1000,
             show_line_numbers: true, show_minimap: true,
             word_wrap: true, bracket_matching: true, lsp_enabled: true,

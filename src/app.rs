@@ -662,10 +662,16 @@ impl eframe::App for PhobosApp {
         if let Some((msg, time)) = &self.notification {
             if *time > 0.0 {
                 egui::TopBottomPanel::bottom("notification")
-                    .frame(Frame { fill: Color32::from_rgb(40, 40, 40), ..Default::default() })
+                    .frame(Frame {
+                            fill: self.theme.bg_tertiary,
+                            stroke: Stroke::new(1.0, self.theme.accent.gamma_multiply(0.5)),
+                            rounding: Rounding::same(8.0),
+                            inner_margin: Margin::symmetric(14.0, 6.0),
+                            ..Default::default()
+                        })
                     .show(ctx, |ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(egui::RichText::new(msg.as_str()).color(self.theme.accent).size(12.0));
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new(format!("✨ {}", msg)).color(self.theme.text_primary).size(12.0));
                         });
                     });
                 self.notification = Some((msg.clone(), time - ctx.input(|i| i.unstable_dt) as f64));
@@ -686,7 +692,16 @@ impl eframe::App for PhobosApp {
 
         if self.welcome_page.visible {
             egui::CentralPanel::default().show(ctx, |ui| {
-                if self.welcome_page.show(ui, &self.theme).is_some() { self.open_file(); }
+                match self.welcome_page.show(ui, &self.theme) {
+                    Some(crate::ui::welcome::WelcomeAction::NewFile) => self.new_file(),
+                    Some(crate::ui::welcome::WelcomeAction::OpenFile) => self.open_file(),
+                    Some(crate::ui::welcome::WelcomeAction::OpenFolder) => self.open_folder(),
+                    Some(crate::ui::welcome::WelcomeAction::OpenPath(p)) => self.load_path(p.into()),
+                    Some(crate::ui::welcome::WelcomeAction::Plugins) => {
+                        self.show_plugins = !self.show_plugins;
+                    }
+                    None => {}
+                }
             });
         } else {
             if self.show_file_explorer && !self.zen_mode.active {

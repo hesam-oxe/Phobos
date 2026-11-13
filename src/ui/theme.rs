@@ -144,7 +144,12 @@ impl Theme {
     }
 
     pub fn by_name(name: &str) -> Option<Self> {
-        Self::all().into_iter().find(|t| t.name.eq_ignore_ascii_case(name))
+        if name.trim().is_empty() {
+            return None;
+        }
+        Self::all()
+            .into_iter()
+            .find(|t| t.name.eq_ignore_ascii_case(name.trim()))
     }
 
     /// Blend two colors (t in 0..1).
@@ -220,7 +225,53 @@ impl Theme {
 
         ctx.set_visuals(visuals);
         ctx.set_pixels_per_point(1.2);
+
+        // expose live theme colors to custom widgets via egui memory
+        let accent = self.accent;
+        let border = self.border;
+        let bg_active = self.bg_secondary;
+        let bg_hover = self.bg_tertiary;
+        ctx.data_mut(|d| {
+            d.insert_temp(egui::Id::new("phobos_accent"), accent);
+            d.insert_temp(egui::Id::new("phobos_border"), border);
+            d.insert_temp(egui::Id::new("phobos_bg_active"), bg_active);
+            d.insert_temp(egui::Id::new("phobos_bg_hover"), bg_hover);
+        });
     }
+}
+
+/// Live accent from the active theme (fallback: ember orange).
+pub fn accent_of(ctx: &egui::Context) -> Color32 {
+    ctx.data(|d| d.get_temp(egui::Id::new("phobos_accent")))
+        .unwrap_or(ACCENT)
+}
+
+/// Live border color from the active theme.
+pub fn border_of(ctx: &egui::Context) -> Color32 {
+    ctx.data(|d| d.get_temp(egui::Id::new("phobos_border")))
+        .unwrap_or(BORDER)
+}
+
+/// Background for active/selected custom rows.
+pub fn bg_active_of(ctx: &egui::Context) -> Color32 {
+    ctx.data(|d| d.get_temp(egui::Id::new("phobos_bg_active")))
+        .unwrap_or_else(|| ctx.style().visuals.window_fill)
+}
+
+/// Background for hovered custom rows.
+pub fn bg_hover_of(ctx: &egui::Context) -> Color32 {
+    ctx.data(|d| d.get_temp(egui::Id::new("phobos_bg_hover")))
+        .unwrap_or_else(|| ctx.style().visuals.faint_bg_color)
+}
+
+/// Primary text color from current visuals.
+pub fn text_of(ctx: &egui::Context) -> Color32 {
+    ctx.style().visuals.text_color()
+}
+
+/// Secondary/weak text color from current visuals.
+pub fn text_weak_of(ctx: &egui::Context) -> Color32 {
+    ctx.style().visuals.weak_text_color()
 }
 
 /// Shared accent color used across custom widgets (tab underline, gutter, etc.)

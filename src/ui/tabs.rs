@@ -1,6 +1,6 @@
 use eframe::egui;
 use egui::{Color32, Frame, Margin, Rounding, Stroke, pos2};
-use crate::ui::theme::{ACCENT, BORDER};
+use crate::ui::theme::{accent_of, bg_active_of, bg_hover_of, border_of, glow_line};
 
 pub struct TabManager {
     pub tabs: Vec<Tab>,
@@ -26,7 +26,7 @@ impl TabManager {
         let bar_rect = ui.available_rect_before_wrap();
         let bar = egui::TopBottomPanel::top("tab_strip")
             .frame(Frame {
-                fill: Color32::from_rgb(25, 25, 25),
+                fill: ui.ctx().style().visuals.extreme_bg_color,
                 inner_margin: Margin { left: 4.0, right: 4.0, top: 2.0, bottom: 0.0 },
                 ..Default::default()
             })
@@ -57,24 +57,27 @@ impl TabManager {
                     );
                     let response = ui.interact(rect, egui::Id::new(("tab", i)), egui::Sense::click());
 
-                    // tab background
+                    // tab background — from live theme
                     let bg = if selected {
-                        Color32::from_rgb(30, 30, 30)
+                        bg_active_of(ui.ctx())
                     } else if response.hovered() {
-                        Color32::from_rgb(38, 38, 38)
+                        bg_hover_of(ui.ctx())
                     } else {
-                        Color32::from_rgb(25, 25, 25)
+                        Color32::TRANSPARENT
                     };
                     let rounding = Rounding {
                         nw: 6.0, ne: 6.0, sw: 0.0, se: 0.0,
                     };
                     ui.painter().rect_filled(rect, rounding, bg);
                     if selected {
-                        ui.painter().rect_stroke(rect, rounding, Stroke::new(1.0, BORDER));
-                        // accent underline
-                        ui.painter().line_segment(
-                            [pos2(rect.left() + 4.0, rect.bottom() - 1.0), pos2(rect.right() - 4.0, rect.bottom() - 1.0)],
-                            Stroke::new(2.0, ACCENT),
+                        ui.painter().rect_stroke(rect, rounding, Stroke::new(1.0, border_of(ui.ctx())));
+                        // glowing accent underline
+                        glow_line(
+                            ui.painter(),
+                            pos2(rect.left() + 4.0, rect.bottom() - 1.0),
+                            pos2(rect.right() - 4.0, rect.bottom() - 1.0),
+                            accent_of(ui.ctx()),
+                            1.6,
                         );
                     }
 
@@ -84,7 +87,7 @@ impl TabManager {
                         egui::Align2::LEFT_CENTER,
                         &label,
                         egui::TextStyle::Body.resolve(ui.style()),
-                        if selected { Color32::from_rgb(230, 230, 230) } else { Color32::from_rgb(150, 150, 150) },
+                        if selected { ui.ctx().style().visuals.text_color() } else { ui.ctx().style().visuals.weak_text_color() },
                     );
 
                     // close ✕ (visible on hover or when active)
@@ -95,12 +98,12 @@ impl TabManager {
                     if selected || response.hovered() {
                         let close_resp = ui.interact(close_rect, egui::Id::new(("tab_close", i)), egui::Sense::click());
                         let x_color = if close_resp.hovered() {
-                            Color32::WHITE
+                            ui.ctx().style().visuals.text_color()
                         } else {
-                            Color32::from_rgb(160, 160, 160)
+                            ui.ctx().style().visuals.weak_text_color()
                         };
                         if close_resp.hovered() {
-                            ui.painter().rect_filled(close_rect, Rounding::same(3.0), Color32::from_rgb(60, 60, 60));
+                            ui.painter().rect_filled(close_rect, Rounding::same(3.0), bg_hover_of(ui.ctx()));
                         }
                         ui.painter().text(
                             close_rect.center(),

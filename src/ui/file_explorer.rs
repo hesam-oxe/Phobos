@@ -1,6 +1,6 @@
 use eframe::egui;
 use std::path::Path;
-use crate::ui::theme::ACCENT;
+use crate::ui::theme::{accent_of, bg_active_of, bg_hover_of, text_of, text_weak_of};
 const DIR_COLOR: egui::Color32 = egui::Color32::from_rgb(240, 190, 90);
 
 pub struct FileExplorer {
@@ -101,7 +101,7 @@ impl FileExplorer {
                 egui::RichText::new("EXPLORER")
                     .size(11.0)
                     .strong()
-                    .color(egui::Color32::from_rgb(150, 150, 165)),
+                    .color(text_weak_of(ui.ctx())),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.small_button("🔄").clicked() {
@@ -124,7 +124,7 @@ impl FileExplorer {
                     if crumbs.is_empty() { "/".to_string() } else { format!("/ {}", crumbs.join(" / ")) },
                 )
                 .size(10.0)
-                .color(egui::Color32::from_rgb(110, 112, 130)),
+                .color(text_weak_of(ui.ctx())),
             );
         });
         ui.add_space(2.0);
@@ -140,13 +140,9 @@ impl FileExplorer {
                 );
                 let hovered = resp.hovered();
 
-                // row background
+                // row background — from live theme
                 if selected {
-                    ui.painter().rect_filled(
-                        rect,
-                        egui::Rounding::same(5.0),
-                        egui::Color32::from_rgb(45, 44, 60),
-                    );
+                    ui.painter().rect_filled(rect, egui::Rounding::same(5.0), bg_active_of(ui.ctx()));
                     // accent left bar
                     ui.painter().rect_filled(
                         egui::Rect::from_min_size(
@@ -154,14 +150,10 @@ impl FileExplorer {
                             egui::vec2(3.0, rect.height() - 4.0),
                         ),
                         egui::Rounding::same(2.0),
-                        ACCENT,
+                        accent_of(ui.ctx()),
                     );
                 } else if hovered {
-                    ui.painter().rect_filled(
-                        rect,
-                        egui::Rounding::same(5.0),
-                        egui::Color32::from_rgb(38, 38, 50),
-                    );
+                    ui.painter().rect_filled(rect, egui::Rounding::same(5.0), bg_hover_of(ui.ctx()));
                 }
 
                 let icon_color = if entry.is_dir { DIR_COLOR } else { file_color(&entry.name) };
@@ -178,11 +170,7 @@ impl FileExplorer {
                     egui::Align2::LEFT_CENTER,
                     &entry.name,
                     egui::FontId::proportional(12.5),
-                    if selected || hovered {
-                        egui::Color32::from_rgb(235, 235, 245)
-                    } else {
-                        egui::Color32::from_rgb(190, 190, 205)
-                    },
+                    if selected || hovered { text_of(ui.ctx()) } else { text_weak_of(ui.ctx()) },
                 );
                 // size (right aligned)
                 if !entry.size.is_empty() {
@@ -191,7 +179,7 @@ impl FileExplorer {
                         egui::Align2::RIGHT_CENTER,
                         &entry.size,
                         egui::FontId::monospace(9.5),
-                        egui::Color32::from_rgb(105, 107, 125),
+                        text_weak_of(ui.ctx()),
                     );
                 }
 
